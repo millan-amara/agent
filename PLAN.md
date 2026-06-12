@@ -134,7 +134,38 @@ Three modes:
 
 ---
 
-## 7. Top risks
+## 7. Roadmap beyond MVP
+
+### v1.5 — Pilot-ready hardening (before charging anyone)
+
+- **Production deployment:** real hosting + domain (stable webhook URL replaces dev tunnel), Postgres migration, BullMQ/Redis queue driver, process supervision, backups, error monitoring.
+- **Live payment verification:** end-to-end Paystack test (test key → real KES transaction), Paystack webhook registered on a stable URL.
+- **Media messages:** inbound images and voice notes (transcribe voice → agent loop) — Kenyan customers send voice notes constantly; today they're silently ignored.
+- **Knowledge base:** doc/FAQ upload → RAG (pgvector) so the AI answers from more than the profile form.
+- **Password reset via email** + email verification on signup.
+- **Compliance ops:** per-tenant quality-rating monitoring, outbound rate limiting, message delivery status (sent/delivered/read), ODPC registration + tenant data export/delete.
+- **Cost tiering:** cheap router model in front of the reply model (deferred from Slice 1); per-tenant cost dashboards internally.
+
+### v2 — Growth (the moat)
+
+- **Embedded Signup** (Meta Tech Provider approval): one-click WhatsApp connection — kills the biggest onboarding friction.
+- **Azayon billing enforcement:** Paystack subscriptions, plan tiers by conversation volume, trial expiry gating.
+- **Team features:** multiple users per tenant, conversation assignment, roles (owner/agent), activity audit.
+- **Google Calendar sync** (then Outlook): two-way sync with the internal booking calendar.
+- **Deeper ad attribution:** per-ad/per-source funnel and revenue (CTWA click IDs are already captured), "which ad made you money" reporting.
+- **Broadcasts:** opt-in template campaigns to segments (pipeline stage, source, custom fields).
+- **Email channel** + **SMS fallback** (Africa's Talking) for missed WhatsApp reminders.
+- **Swahili UI** (strings are externalization-ready) + richer vertical template library grown from pilot learnings.
+
+### v3 — AI workforce
+
+- **AI voice agents:** inbound call answering and outbound lead calls (form fill → AI calls back in 30 seconds), CRM-integrated like the chat agent.
+- **Multi-number / multi-location** tenants (branches, departments).
+- **Deep workflow automations:** trigger → multi-step action builder (the "simple automations" menu grows up).
+- **AI insights:** weekly owner digest ("you lost 6 leads to pricing objections this week"), conversation quality scoring, suggested FAQ/profile improvements mined from real chats.
+- **Marketplace/API:** webhooks + REST API for tenants' own systems; integrations (Sheets export, accounting).
+
+## 8. Top risks
 
 | Risk | Mitigation |
 |---|---|
