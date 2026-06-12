@@ -12,7 +12,17 @@ import {
 import { ProfileForm } from "@/components/ProfileForm";
 import { TemplateManager } from "@/components/TemplateManager";
 
+const SETTINGS_TABS = [
+  { id: "ai", label: "Your AI" },
+  { id: "whatsapp", label: "WhatsApp" },
+  { id: "automation", label: "Automation" },
+  { id: "payments", label: "Payments" },
+  { id: "account", label: "Account" },
+] as const;
+type TabId = (typeof SETTINGS_TABS)[number]["id"];
+
 export default function SettingsPage() {
+  const [tab, setTab] = useState<TabId>("ai");
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -84,7 +94,26 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto h-full max-w-2xl space-y-6 overflow-y-auto p-4">
+    <div className="mx-auto h-full max-w-2xl space-y-4 overflow-y-auto p-4">
+      <nav className="flex gap-1.5 overflow-x-auto pb-1">
+        {SETTINGS_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium ${
+              tab === t.id
+                ? "bg-primary-dark text-white"
+                : "border border-line bg-white text-muted hover:bg-canvas"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {error && <p className="rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{error}</p>}
+
+      {tab === "whatsapp" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-1 font-semibold">WhatsApp connection</h2>
         {tenant.waConnected ? (
@@ -123,7 +152,9 @@ export default function SettingsPage() {
           </button>
         </form>
       </section>
+      )}
 
+      {tab === "automation" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-1 font-semibold">Appointment booking</h2>
         <p className="mb-3 text-xs text-muted">
@@ -243,7 +274,9 @@ export default function SettingsPage() {
           </form>
         )}
       </section>
+      )}
 
+      {tab === "payments" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-1 font-semibold">Payments (Paystack)</h2>
         <p className="mb-3 text-xs text-muted">
@@ -289,12 +322,16 @@ export default function SettingsPage() {
           </button>
         </form>
       </section>
+      )}
 
+      {tab === "whatsapp" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-3 font-semibold">Message templates</h2>
         <TemplateManager wabaConfigured={tenant.wabaConfigured} />
       </section>
+      )}
 
+      {tab === "automation" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-1 font-semibold">Automatic follow-ups</h2>
         <p className="mb-3 text-xs text-muted">
@@ -377,12 +414,16 @@ export default function SettingsPage() {
           </form>
         )}
       </section>
+      )}
 
+      {tab === "account" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-3 font-semibold">Account</h2>
         <PasswordForm />
       </section>
+      )}
 
+      {tab === "ai" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-3 font-semibold">Tell Azayon how to reply</h2>
         {error && <p className="mb-3 rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{error}</p>}
@@ -393,6 +434,7 @@ export default function SettingsPage() {
         )}
         <ProfileForm initial={tenant.profile} saving={saving} submitLabel="Save changes" onSubmit={(p) => void save(p)} />
       </section>
+      )}
     </div>
   );
 }
