@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   api,
+  type BookingSettings,
   type BusinessProfile,
   type FollowUpSettings,
   type MessageTemplate,
@@ -26,12 +27,18 @@ export default function SettingsPage() {
   const [fuTemplates, setFuTemplates] = useState<MessageTemplate[]>([]);
   const [fuMsg, setFuMsg] = useState<string | null>(null);
 
+  const [booking, setBooking] = useState<BookingSettings | null>(null);
+  const [bookingMsg, setBookingMsg] = useState<string | null>(null);
+  const [paystackKey, setPaystackKey] = useState("");
+  const [paystackMsg, setPaystackMsg] = useState<string | null>(null);
+
   useEffect(() => {
     api
       .tenant()
       .then((t) => {
         setTenant(t);
         setFollowUps(t.followUps);
+        setBooking(t.booking);
       })
       .catch(() => {});
     api.messageTemplates().then(setFuTemplates).catch(() => {});
@@ -113,6 +120,172 @@ export default function SettingsPage() {
             className="rounded-card border border-line px-4 py-2 text-sm font-medium hover:bg-canvas disabled:opacity-50"
           >
             {tenant.waConnected ? "Update connection" : "Connect"}
+          </button>
+        </form>
+      </section>
+
+      <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-1 font-semibold">Appointment booking</h2>
+        <p className="mb-3 text-xs text-muted">
+          When enabled, the AI offers real slots from this calendar and books them in chat.
+        </p>
+        {bookingMsg && (
+          <p className="mb-3 rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">
+            {bookingMsg}
+          </p>
+        )}
+        {booking && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBookingMsg(null);
+              try {
+                await api.saveBooking(booking);
+                setBookingMsg("Booking settings saved.");
+              } catch (err) {
+                setError((err as Error).message);
+              }
+            }}
+            className="space-y-3"
+          >
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={booking.enabled}
+                onChange={(e) => setBooking({ ...booking, enabled: e.target.checked })}
+              />
+              <span className="font-medium">Let the AI book appointments</span>
+            </label>
+            <div className="flex gap-4">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Slot length (min)</span>
+                <input
+                  type="number"
+                  value={booking.slotMinutes}
+                  onChange={(e) => setBooking({ ...booking, slotMinutes: Number(e.target.value) })}
+                  className="tnum w-24 rounded-card border border-line px-3 py-2 outline-none focus:border-primary"
+                />
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">Book up to (days ahead)</span>
+                <input
+                  type="number"
+                  value={booking.daysAhead}
+                  onChange={(e) => setBooking({ ...booking, daysAhead: Number(e.target.value) })}
+                  className="tnum w-24 rounded-card border border-line px-3 py-2 outline-none focus:border-primary"
+                />
+              </label>
+            </div>
+            <div>
+              <span className="mb-1 block text-sm font-medium">Weekly hours</span>
+              <div className="space-y-1.5">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label, d) => {
+                  const h = booking.hours[String(d)];
+                  return (
+                    <div key={d} className="flex items-center gap-2 text-sm">
+                      <label className="flex w-20 items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(h)}
+                          onChange={(e) =>
+                            setBooking({
+                              ...booking,
+                              hours: {
+                                ...booking.hours,
+                                [String(d)]: e.target.checked
+                                  ? { start: "09:00", end: "17:00" }
+                                  : null,
+                              },
+                            })
+                          }
+                        />
+                        {label}
+                      </label>
+                      {h && (
+                        <>
+                          <input
+                            value={h.start}
+                            onChange={(e) =>
+                              setBooking({
+                                ...booking,
+                                hours: {
+                                  ...booking.hours,
+                                  [String(d)]: { ...h, start: e.target.value },
+                                },
+                              })
+                            }
+                            className="tnum w-20 rounded-card border border-line px-2 py-1 outline-none focus:border-primary"
+                          />
+                          <span className="text-muted">–</span>
+                          <input
+                            value={h.end}
+                            onChange={(e) =>
+                              setBooking({
+                                ...booking,
+                                hours: {
+                                  ...booking.hours,
+                                  [String(d)]: { ...h, end: e.target.value },
+                                },
+                              })
+                            }
+                            className="tnum w-20 rounded-card border border-line px-2 py-1 outline-none focus:border-primary"
+                          />
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <button className="rounded-card bg-primary-dark px-4 py-2 text-sm font-semibold text-white">
+              Save booking settings
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-1 font-semibold">Payments (Paystack)</h2>
+        <p className="mb-3 text-xs text-muted">
+          Connect your Paystack account and the AI can collect payment in chat — M-Pesa or card —
+          when a customer agrees to buy.
+        </p>
+        {tenant.paystackConfigured && (
+          <p className="mb-3 text-sm text-success">✅ Connected — in-chat payments are on.</p>
+        )}
+        {paystackMsg && (
+          <p className="mb-3 rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">
+            {paystackMsg}
+          </p>
+        )}
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setPaystackMsg(null);
+            setError(null);
+            try {
+              await api.savePaystack(paystackKey);
+              setPaystackMsg("Paystack connected.");
+              setTenant({ ...tenant, paystackConfigured: true });
+              setPaystackKey("");
+            } catch (err) {
+              setError((err as Error).message);
+            }
+          }}
+          className="flex gap-2"
+        >
+          <input
+            type="password"
+            value={paystackKey}
+            onChange={(e) => setPaystackKey(e.target.value)}
+            placeholder="Paystack secret key (sk_live_... or sk_test_...)"
+            className="flex-1 rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary"
+          />
+          <button
+            disabled={!paystackKey}
+            className="rounded-card border border-line px-4 py-2 text-sm font-medium hover:bg-canvas disabled:opacity-50"
+          >
+            {tenant.paystackConfigured ? "Update" : "Connect"}
           </button>
         </form>
       </section>

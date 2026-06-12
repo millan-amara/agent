@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Contact, Tenant } from "@prisma/client";
 import { db } from "../db.js";
 import { publish } from "../events.js";
+import { computeAvailableSlots, formatSlot, parseBookingConfig } from "../booking.js";
+import { createPaymentLink, PaystackError } from "../paystack.js";
 
 export interface ToolContext {
   tenant: Tenant;
@@ -9,7 +11,69 @@ export interface ToolContext {
   stages: string[];
 }
 
-export function buildTools(stages: string[]): Anthropic.Tool[] {
+export interface TenantCapabilities {
+  booking: boolean;
+  payments: boolean;
+}
+
+export function tenantCapabilities(tenant: Tenant): TenantCapabilities {
+  return {
+    booking: parseBookingConfig(tenant).enabled,
+    payments: Boolean(tenant.paystackSecretKey),
+  };
+}
+
+export function buildTools(stages: string[], caps: TenantCapabilities): Anthropic.Tool[] {
+  const tools = baseTools(stages);
+  if (caps.booking) {
+    tools.push(
+      {
+        name: "get_available_slots",
+        description:
+          "Get the next available appointment slots from the business calendar. Call this BEFORE " +
+          "offering any appointment time — never invent availability. Offer the customer 2–3 options.",
+        input_schema: { type: "object", properties: {} },
+      },
+      {
+        name: "book_appointment",
+        description:
+          "Book an appointment for this customer in a slot returned by get_available_slots. " +
+          "Only call after the customer has clearly chosen a time.",
+        input_schema: {
+          type: "object",
+          properties: {
+            start_iso: {
+              type: "string",
+              description: "The slot's ISO timestamp, exactly as returned by get_available_slots",
+            },
+            note: { type: "string", description: "What the appointment is for" },
+          },
+          required: ["start_iso"],
+        },
+      },
+    );
+  }
+  if (caps.payments) {
+    tools.push({
+      name: "create_invoice",
+      description:
+        "Create a payment request when the customer agrees to pay for something. Returns a secure " +
+        "payment link (M-Pesa or card) — include it in your reply. Use exact prices from the " +
+        "services list only.",
+      input_schema: {
+        type: "object",
+        properties: {
+          amount_kes: { type: "number", description: "Amount in KES, from the services list" },
+          description: { type: "string", description: "What the payment is for" },
+        },
+        required: ["amount_kes", "description"],
+      },
+    });
+  }
+  return tools;
+}
+
+function baseTools(stages: string[]): Anthropic.Tool[] {
   return [
     {
       name: "update_lead",
@@ -168,6 +232,67 @@ export async function executeTool(
         `[escalation] tenant=${ctx.tenant.name} contact=${ctx.contact.phone}: ${String(input.reason ?? "")}`,
       );
       return "Escalated. A human has been notified and will take over after your reply.";
+    }
+    case "get_available_slots": {
+      const slots = await computeAvailableSlots(ctx.tenant, 24);
+      if (slots.length === 0) {
+        return "No slots available in the booking window. Apologize and offer to have the team reach out.";
+      }
+      // First slots across the next few distinct days, so the model can offer variety.
+      const byDay = new Map<string, { startsAt: Date }[]>();
+      for (const s of slots) {
+        const key = s.startsAt.toDateString();
+        byDay.set(key, [...(byDay.get(key) ?? []), s]);
+      }
+      const lines = [...byDay.values()]
+        .slice(0, 4)
+        .flatMap((day) => day.slice(0, 3))
+        .map((s) => `- ${formatSlot(s.startsAt)} [${s.startsAt.toISOString()}]`);
+      return `Available slots (offer 2-3; book using the ISO value in brackets):\n${lines.join("\n")}`;
+    }
+    case "book_appointment": {
+      const start = new Date(String(input.start_iso ?? ""));
+      if (Number.isNaN(start.getTime())) return "Error: start_iso is not a valid timestamp.";
+      const slots = await computeAvailableSlots(ctx.tenant, 200);
+      const slot = slots.find((s) => s.startsAt.getTime() === start.getTime());
+      if (!slot) {
+        return "Error: that slot is no longer available. Call get_available_slots again and offer fresh options.";
+      }
+      await db.appointment.create({
+        data: {
+          tenantId: ctx.tenant.id,
+          contactId: ctx.contact.id,
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+          note: String(input.note ?? ""),
+        },
+      });
+      await logEvent(ctx, `Appointment booked: ${formatSlot(slot.startsAt)}`);
+      return `Booked for ${formatSlot(slot.startsAt)}. Confirm this to the customer.`;
+    }
+    case "create_invoice": {
+      const amount = Number(input.amount_kes);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return "Error: amount_kes must be a positive number.";
+      }
+      try {
+        const { payUrl } = await createPaymentLink(
+          ctx.tenant,
+          ctx.contact,
+          amount,
+          String(input.description ?? "Payment"),
+        );
+        await logEvent(
+          ctx,
+          `Invoice created: KES ${amount.toLocaleString()} — ${String(input.description ?? "")}`,
+        );
+        return `Invoice created. Send the customer this payment link (M-Pesa or card): ${payUrl}`;
+      } catch (err) {
+        if (err instanceof PaystackError) {
+          return `Error: ${err.message} Tell the customer the team will send payment details shortly, and escalate.`;
+        }
+        throw err;
+      }
     }
     case "stop_messaging": {
       ctx.contact = await db.contact.update({

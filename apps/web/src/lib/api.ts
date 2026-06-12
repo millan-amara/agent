@@ -32,6 +32,30 @@ export interface Conversation extends ApiContact {
 export interface ContactDetail extends ApiContact {
   messages: ApiMessage[];
   followUps: Array<{ id: string; dueAt: string; note: string }>;
+  appointments?: Array<{ id: string; startsAt: string; note: string }>;
+  invoices?: Array<{
+    id: string;
+    amountKes: number;
+    description: string;
+    status: string;
+    createdAt: string;
+  }>;
+}
+
+export interface Appointment {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  status: string;
+  note: string;
+  contact: { id: string; name: string | null; phone: string };
+}
+
+export interface BookingSettings {
+  enabled: boolean;
+  slotMinutes: number;
+  daysAhead: number;
+  hours: Record<string, { start: string; end: string } | null>;
 }
 
 export interface BusinessProfile {
@@ -72,6 +96,8 @@ export interface TenantInfo {
   stages: string[];
   profile: BusinessProfile;
   followUps: FollowUpSettings;
+  booking: BookingSettings;
+  paystackConfigured: boolean;
 }
 
 export interface Me {
@@ -127,6 +153,16 @@ export const api = {
     }),
   saveFollowUps: (body: FollowUpSettings) =>
     request<{ ok: true }>("/api/tenant/followups", { method: "PUT", body: JSON.stringify(body) }),
+  saveBooking: (body: BookingSettings) =>
+    request<{ ok: true }>("/api/tenant/booking", { method: "PUT", body: JSON.stringify(body) }),
+  savePaystack: (secretKey: string) =>
+    request<{ ok: true }>("/api/tenant/paystack", {
+      method: "PUT",
+      body: JSON.stringify({ secretKey }),
+    }),
+  appointments: () => request<Appointment[]>("/api/appointments"),
+  cancelAppointment: (id: string) =>
+    request<{ ok: true }>(`/api/appointments/${id}/cancel`, { method: "POST" }),
 
   // template messages
   messageTemplates: () => request<MessageTemplate[]>("/api/message-templates"),

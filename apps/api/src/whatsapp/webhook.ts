@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { db } from "../db.js";
 import type { QueueDriver } from "../queue/queue.js";
 import { handleInboundText } from "../inbound.js";
+import { markInvoicePaid, verifyPaystackSignature } from "../paystack.js";
 
 interface WebhookMessage {
   id: string;
@@ -27,6 +28,40 @@ export function registerWebhookRoutes(app: FastifyInstance, queue: QueueDriver):
       return reply.code(200).send(q["hub.challenge"]);
     }
     return reply.code(403).send("verification failed");
+  });
+
+  // Paystack payment events. Signature is HMAC-SHA512 of the raw body with
+  // the receiving tenant's secret key — invoice reference identifies the tenant.
+  app.post("/webhooks/paystack", async (req, reply) => {
+    const raw = req.body as Buffer;
+    try {
+      const event = JSON.parse(raw.toString("utf8")) as {
+        event?: string;
+        data?: { reference?: string };
+      };
+      const reference = event.data?.reference;
+      if (!reference) return reply.code(200).send("ok");
+      const invoice = await db.invoice.findUnique({
+        where: { paystackRef: reference },
+        include: { tenant: true },
+      });
+      if (!invoice?.tenant.paystackSecretKey) return reply.code(200).send("ok");
+
+      const signature = req.headers["x-paystack-signature"];
+      if (
+        typeof signature !== "string" ||
+        !verifyPaystackSignature(raw, signature, invoice.tenant.paystackSecretKey)
+      ) {
+        return reply.code(401).send("bad signature");
+      }
+      if (event.event === "charge.success") {
+        await markInvoicePaid(reference);
+      }
+      return reply.code(200).send("ok");
+    } catch (err) {
+      console.error("[paystack] webhook failed:", err);
+      return reply.code(200).send("ok");
+    }
   });
 
   // Raw-body content parser is registered in index.ts; req.body is a Buffer here.

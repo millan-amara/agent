@@ -29,13 +29,55 @@ model Tenant {
   waWabaId        String?
   // JSON: { enabled, delaysHours: number[], templateId } — auto no-reply sequences
   followUpConfig  String   @default("{}")
+  // JSON: { enabled, slotMinutes, daysAhead, hours: {"1": {start,end}, ...} } (0=Sun..6=Sat)
+  bookingConfig   String   @default("{}")
+  // Tenant's own Paystack secret key — enables in-chat payment collection
+  paystackSecretKey String?
   createdAt       DateTime @default(now())
 
-  users     User[]
-  contacts  Contact[]
-  messages  Message[]
-  followUps FollowUp[]
-  templates Template[]
+  users        User[]
+  contacts     Contact[]
+  messages     Message[]
+  followUps    FollowUp[]
+  templates    Template[]
+  appointments Appointment[]
+  invoices     Invoice[]
+}
+
+model Appointment {
+  id             String    @id @default(cuid())
+  tenantId       String
+  contactId      String
+  startsAt       DateTime
+  endsAt         DateTime
+  status         String    @default("booked") // booked | cancelled | completed
+  note           String    @default("")
+  reminderSentAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  contact Contact @relation(fields: [contactId], references: [id])
+
+  @@index([tenantId, startsAt])
+}
+
+model Invoice {
+  id          String    @id @default(cuid())
+  tenantId    String
+  contactId   String
+  // KES subunits (cents) — Paystack convention
+  amountCents Int
+  description String
+  status      String    @default("pending") // pending | paid | failed | cancelled
+  paystackRef String    @unique
+  payUrl      String
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  contact Contact @relation(fields: [contactId], references: [id])
+
+  @@index([tenantId, status])
 }
 
 // WhatsApp template message (required for messaging outside the 24h window).
@@ -99,9 +141,11 @@ model Contact {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  messages  Message[]
-  followUps FollowUp[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  messages     Message[]
+  followUps    FollowUp[]
+  appointments Appointment[]
+  invoices     Invoice[]
 
   @@unique([tenantId, phone])
   @@index([tenantId, stage])

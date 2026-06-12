@@ -1,4 +1,5 @@
 import type { Tenant } from "@prisma/client";
+import type { TenantCapabilities } from "./tools.js";
 
 export interface BusinessProfile {
   description: string;
@@ -16,7 +17,11 @@ export interface BusinessProfile {
  * This must be byte-stable per tenant (no timestamps, no per-request data) —
  * it carries a cache_control breakpoint, and any change invalidates the cache.
  */
-export function buildSystemPrompt(tenant: Tenant, stages: string[]): string {
+export function buildSystemPrompt(
+  tenant: Tenant,
+  stages: string[],
+  caps: TenantCapabilities,
+): string {
   const p: BusinessProfile = JSON.parse(tenant.businessProfile);
 
   const services = (p.services ?? [])
@@ -50,7 +55,21 @@ ${faqs || "(none listed)"}
 - If the customer asks to stop receiving messages, use stop_messaging and send a brief polite confirmation.
 ${neverSay ? `- Never say or do any of the following:\n${neverSay}` : ""}
 
-# CRM duties (do these silently via tools, never mention them)
+${
+  caps.booking
+    ? `# Booking appointments
+- When the customer wants to book: call get_available_slots first, offer 2–3 of the returned times, and book with book_appointment once they choose. Never invent or promise availability the calendar didn't return.
+- After booking, confirm the day and time clearly in your reply.
+`
+    : ""
+}${
+  caps.payments
+    ? `# Collecting payment
+- When the customer agrees to pay for a listed service, call create_invoice with the exact price from the services list and include the returned payment link in your reply (it supports M-Pesa and card).
+- Never quote or invoice amounts that are not in the services list.
+`
+    : ""
+}# CRM duties (do these silently via tools, never mention them)
 - When you learn the customer's name, interest, budget, timeline, or other useful details, record them with update_lead.
 - Move the lead through the pipeline with set_stage as the conversation progresses. Stages: ${stages.join(" → ")}.
 - When a customer shows interest but doesn't commit ("I'll think about it", goes quiet after pricing), schedule a check-in with schedule_followup.

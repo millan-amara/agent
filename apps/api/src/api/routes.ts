@@ -14,6 +14,8 @@ import {
   variableCount,
 } from "../whatsapp/templates.js";
 import { parseFollowUpConfig } from "../followups.js";
+import { parseBookingConfig, type BookingConfig } from "../booking.js";
+import { verifyPaystackKey } from "../paystack.js";
 import type { BusinessProfile } from "../agent/prompt.js";
 
 const serializeContact = (c: Contact) => ({
@@ -60,7 +62,85 @@ export function registerApiRoutes(
       stages: JSON.parse(auth.tenant.stages) as string[],
       profile: JSON.parse(auth.tenant.businessProfile) as BusinessProfile,
       followUps: parseFollowUpConfig(auth.tenant),
+      booking: parseBookingConfig(auth.tenant),
+      paystackConfigured: Boolean(auth.tenant.paystackSecretKey),
     };
+  });
+
+  // Booking calendar configuration.
+  app.put("/api/tenant/booking", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const body = req.body as Partial<BookingConfig>;
+    const hours: Record<string, { start: string; end: string } | null> = {};
+    for (let d = 0; d <= 6; d++) {
+      const h = body.hours?.[String(d)];
+      hours[String(d)] =
+        h && /^\d{1,2}:\d{2}$/.test(h.start) && /^\d{1,2}:\d{2}$/.test(h.end) ? h : null;
+    }
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: {
+        bookingConfig: JSON.stringify({
+          enabled: Boolean(body.enabled),
+          slotMinutes: Math.min(Math.max(Number(body.slotMinutes) || 60, 10), 240),
+          daysAhead: Math.min(Math.max(Number(body.daysAhead) || 14, 1), 60),
+          hours,
+        }),
+      },
+    });
+    return { ok: true };
+  });
+
+  // Paystack connection (per-tenant secret key, verified against their API).
+  app.put("/api/tenant/paystack", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { secretKey } = req.body as { secretKey?: string };
+    if (!secretKey?.startsWith("sk_")) {
+      return reply.code(400).send({ error: "A Paystack secret key (sk_...) is required." });
+    }
+    if (!(await verifyPaystackKey(secretKey.trim()))) {
+      return reply.code(400).send({ error: "Paystack rejected that key — check it and try again." });
+    }
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: { paystackSecretKey: secretKey.trim() },
+    });
+    return { ok: true };
+  });
+
+  app.get("/api/appointments", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const appointments = await db.appointment.findMany({
+      where: { tenantId: auth.tenant.id, startsAt: { gte: new Date(Date.now() - 86_400_000) } },
+      include: { contact: { select: { id: true, name: true, phone: true } } },
+      orderBy: { startsAt: "asc" },
+      take: 100,
+    });
+    return appointments;
+  });
+
+  app.post("/api/appointments/:id/cancel", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { id } = req.params as { id: string };
+    const appt = await db.appointment.findFirst({ where: { id, tenantId: auth.tenant.id } });
+    if (!appt) return reply.code(404).send({ error: "not found" });
+    await db.appointment.update({ where: { id }, data: { status: "cancelled" } });
+    await db.message.create({
+      data: {
+        tenantId: auth.tenant.id,
+        contactId: appt.contactId,
+        direction: "out",
+        author: "system",
+        kind: "event",
+        text: "Appointment cancelled by team",
+      },
+    });
+    publish({ type: "contact_updated", tenantId: auth.tenant.id, contactId: appt.contactId });
+    return { ok: true };
   });
 
   // Save the guided prompt-builder output. Marks onboarding complete when asked.
@@ -342,6 +422,11 @@ export function registerApiRoutes(
       include: {
         messages: { orderBy: { createdAt: "asc" } },
         followUps: { where: { status: "scheduled" }, orderBy: { dueAt: "asc" } },
+        appointments: {
+          where: { status: "booked", startsAt: { gte: new Date() } },
+          orderBy: { startsAt: "asc" },
+        },
+        invoices: { orderBy: { createdAt: "desc" }, take: 10 },
       },
     });
     if (!contact) return reply.code(404).send({ error: "not found" });
@@ -349,6 +434,18 @@ export function registerApiRoutes(
       ...serializeContact(contact),
       messages: contact.messages.map(serializeMessage),
       followUps: contact.followUps.map((f) => ({ id: f.id, dueAt: f.dueAt, note: f.note })),
+      appointments: contact.appointments.map((a) => ({
+        id: a.id,
+        startsAt: a.startsAt,
+        note: a.note,
+      })),
+      invoices: contact.invoices.map((i) => ({
+        id: i.id,
+        amountKes: i.amountCents / 100,
+        description: i.description,
+        status: i.status,
+        createdAt: i.createdAt,
+      })),
     };
   });
 

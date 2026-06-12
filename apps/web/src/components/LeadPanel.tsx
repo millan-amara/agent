@@ -59,6 +59,57 @@ export function LeadPanel({
         )}
       </section>
 
+      {(detail.appointments?.length ?? 0) > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            Appointments
+          </h3>
+          <ul className="space-y-2">
+            {detail.appointments!.map((a) => (
+              <li key={a.id} className="rounded-card border border-line p-2 text-sm">
+                <div className="font-medium">
+                  {new Date(a.startsAt).toLocaleString([], {
+                    weekday: "short",
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+                {a.note && <div className="text-xs text-muted">{a.note}</div>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {(detail.invoices?.length ?? 0) > 0 && (
+        <section>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            Payments
+          </h3>
+          <ul className="space-y-1.5">
+            {detail.invoices!.map((i) => (
+              <li key={i.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="truncate text-muted">{i.description}</span>
+                <span className="tnum shrink-0 font-medium">
+                  KES {i.amountKes.toLocaleString()}
+                </span>
+                <span
+                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                    i.status === "paid"
+                      ? "bg-primary-soft text-primary-dark"
+                      : "border border-line bg-canvas text-muted"
+                  }`}
+                >
+                  {i.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
           Follow-ups

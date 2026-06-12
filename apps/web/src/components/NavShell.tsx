@@ -8,6 +8,7 @@ import { api, AuthError, type Me } from "@/lib/api";
 const TABS = [
   { href: "/inbox", label: "Inbox", icon: "💬" },
   { href: "/pipeline", label: "Pipeline", icon: "📋" },
+  { href: "/appointments", label: "Bookings", icon: "📅" },
   { href: "/contacts", label: "Contacts", icon: "👥" },
   { href: "/simulator", label: "Simulator", icon: "🧪" },
   { href: "/settings", label: "Settings", icon: "⚙️" },

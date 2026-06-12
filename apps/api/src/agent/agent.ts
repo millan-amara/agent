@@ -4,7 +4,7 @@ import { db } from "../db.js";
 import { publish } from "../events.js";
 import type { MessageSender } from "../whatsapp/sender.js";
 import { buildSystemPrompt } from "./prompt.js";
-import { buildTools, executeTool, type ToolContext } from "./tools.js";
+import { buildTools, executeTool, tenantCapabilities, type ToolContext } from "./tools.js";
 
 const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
 
@@ -67,14 +67,15 @@ export async function runAgentTurn(
   if (messages[messages.length - 1]!.role === "assistant") return; // nothing new to answer
 
   const ctx: ToolContext = { tenant, contact, stages };
-  const tools = buildTools(stages);
+  const caps = tenantCapabilities(tenant);
+  const tools = buildTools(stages, caps);
 
   // The system prompt is byte-stable per tenant — cache it. Tools render
   // before system, so this one breakpoint caches tools + system together.
   const system: Anthropic.TextBlockParam[] = [
     {
       type: "text",
-      text: buildSystemPrompt(tenant, stages),
+      text: buildSystemPrompt(tenant, stages, caps),
       cache_control: { type: "ephemeral" },
     },
   ];

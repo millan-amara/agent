@@ -39,11 +39,66 @@ export function startFollowUpWorker(sender: MessageSender, intervalMs = 60_000):
     try {
       await executeDueFollowUps(sender);
       await scheduleAutoFollowUps();
+      await sendAppointmentReminders(sender);
     } catch (err) {
       console.error("[followups] tick failed:", err);
     }
   };
   return setInterval(() => void tick(), intervalMs);
+}
+
+/** Reminds customers ~24h before their appointment (window-aware, once). */
+async function sendAppointmentReminders(sender: MessageSender): Promise<void> {
+  const soon = new Date(Date.now() + 24 * 3600_000);
+  const due = await db.appointment.findMany({
+    where: { status: "booked", reminderSentAt: null, startsAt: { gte: new Date(), lte: soon } },
+    include: { contact: true, tenant: true },
+    take: 20,
+  });
+  for (const appt of due) {
+    if (appt.contact.optedOut) continue;
+    if (!windowIsOpen(appt.contact) && !appt.contact.isSimulated) {
+      // Reminders are utility messages but still need templates out-of-window;
+      // mark handled so we don't spin. Template-based reminders: later.
+      await db.appointment.update({
+        where: { id: appt.id },
+        data: { reminderSentAt: new Date() },
+      });
+      console.log(`[reminders] window closed for ${appt.contact.phone} — reminder skipped`);
+      continue;
+    }
+    const when = appt.startsAt.toLocaleString("en-KE", {
+      weekday: "long",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    try {
+      await sender.sendText(
+        appt.tenant,
+        appt.contact,
+        `Reminder from ${appt.tenant.name}: your appointment is on ${when}. Reply here if you need to change it.`,
+      );
+      await db.message.create({
+        data: {
+          tenantId: appt.tenantId,
+          contactId: appt.contactId,
+          direction: "out",
+          author: "ai",
+          text: `Reminder from ${appt.tenant.name}: your appointment is on ${when}. Reply here if you need to change it.`,
+        },
+      });
+      await db.appointment.update({
+        where: { id: appt.id },
+        data: { reminderSentAt: new Date() },
+      });
+      publish({ type: "message", tenantId: appt.tenantId, contactId: appt.contactId });
+    } catch (err) {
+      console.error(`[reminders] failed for appointment ${appt.id}:`, err);
+    }
+  }
 }
 
 async function executeDueFollowUps(sender: MessageSender): Promise<void> {
