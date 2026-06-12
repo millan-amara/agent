@@ -1,4 +1,5 @@
 import { db } from "./db.js";
+import { publish } from "./events.js";
 import { contactKey, type QueueDriver } from "./queue/queue.js";
 
 /**
@@ -52,5 +53,6 @@ export async function handleInboundText(
     throw err;
   }
 
+  publish({ type: "message", tenantId: args.tenantId, contactId: contact.id });
   queue.enqueue(contactKey(args.tenantId, contact.id));
 }

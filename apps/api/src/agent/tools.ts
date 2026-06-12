@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Contact, Tenant } from "@prisma/client";
 import { db } from "../db.js";
+import { publish } from "../events.js";
 
 export interface ToolContext {
   tenant: Tenant;
@@ -106,6 +107,7 @@ async function logEvent(ctx: ToolContext, text: string): Promise<void> {
       text,
     },
   });
+  publish({ type: "contact_updated", tenantId: ctx.tenant.id, contactId: ctx.contact.id });
 }
 
 export async function executeTool(

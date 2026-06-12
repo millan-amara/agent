@@ -1,6 +1,9 @@
 import Fastify from "fastify";
+import cors from "@fastify/cors";
+import websocket from "@fastify/websocket";
 import { config, whatsappConfigured } from "./config.js";
 import { runAgentTurn } from "./agent/agent.js";
+import { registerApiRoutes } from "./api/routes.js";
 import { ensureDevTenant } from "./devTenant.js";
 import { startFollowUpWorker } from "./followups.js";
 import { InMemoryDebouncedQueue, parseContactKey } from "./queue/queue.js";
@@ -28,12 +31,23 @@ async function main() {
   console.log(`[boot] dev tenant ready: ${tenant.name} (${tenant.id})`);
 
   const app = Fastify({ logger: true });
-  // Keep the raw body for webhook signature verification.
-  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (_req, body, done) => {
-    done(null, body);
+
+  // Webhook signature verification needs the raw bytes; everything else wants
+  // parsed JSON. Route on the URL inside the parser.
+  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (req, body, done) => {
+    if (req.url.startsWith("/webhooks/")) return done(null, body);
+    try {
+      done(null, body.length ? JSON.parse(body.toString("utf8")) : {});
+    } catch (err) {
+      done(err as Error, undefined);
+    }
   });
 
+  await app.register(cors, { origin: true });
+  await app.register(websocket);
+
   registerWebhookRoutes(app, queue);
+  registerApiRoutes(app, tenant.id, sender);
   app.get("/health", async () => ({ ok: true }));
 
   startFollowUpWorker(sender);

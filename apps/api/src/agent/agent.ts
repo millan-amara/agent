@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 import { db } from "../db.js";
+import { publish } from "../events.js";
 import type { MessageSender } from "../whatsapp/sender.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { buildTools, executeTool, type ToolContext } from "./tools.js";
@@ -141,4 +142,5 @@ async function sendReply(ctx: ToolContext, sender: MessageSender, text: string):
       text,
     },
   });
+  publish({ type: "message", tenantId: ctx.tenant.id, contactId: ctx.contact.id });
 }
