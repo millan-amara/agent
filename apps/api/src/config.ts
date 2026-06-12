@@ -8,6 +8,7 @@ const schema = z.object({
   WA_PHONE_NUMBER_ID: z.string().optional(),
   WA_VERIFY_TOKEN: z.string().default("azayon-dev-verify"),
   WA_APP_SECRET: z.string().optional(),
+  WA_WABA_ID: z.string().optional(),
   REPLY_MODEL: z.string().default("claude-opus-4-8"),
   ROUTER_MODEL: z.string().default("claude-haiku-4-5"),
   PORT: z.coerce.number().default(3001),

@@ -7,6 +7,13 @@ import { getTemplate } from "../templates.js";
 import { handleInboundText } from "../inbound.js";
 import type { QueueDriver } from "../queue/queue.js";
 import { windowIsOpen, WindowClosedError, type MessageSender } from "../whatsapp/sender.js";
+import {
+  submitTemplate,
+  syncTemplateStatuses,
+  TemplateSubmitError,
+  variableCount,
+} from "../whatsapp/templates.js";
+import { parseFollowUpConfig } from "../followups.js";
 import type { BusinessProfile } from "../agent/prompt.js";
 
 const serializeContact = (c: Contact) => ({
@@ -49,8 +56,10 @@ export function registerApiRoutes(
       vertical: auth.tenant.vertical,
       onboarded: auth.tenant.onboarded,
       waConnected: Boolean(auth.tenant.waPhoneNumberId),
+      wabaConfigured: Boolean(auth.tenant.waWabaId),
       stages: JSON.parse(auth.tenant.stages) as string[],
       profile: JSON.parse(auth.tenant.businessProfile) as BusinessProfile,
+      followUps: parseFollowUpConfig(auth.tenant),
     };
   });
 
@@ -83,14 +92,126 @@ export function registerApiRoutes(
     return { ok: true };
   });
 
+  // Auto no-reply follow-up sequence configuration.
+  app.put("/api/tenant/followups", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { enabled, delaysHours, templateId } = req.body as {
+      enabled?: boolean;
+      delaysHours?: number[];
+      templateId?: string;
+    };
+    const delays = (delaysHours ?? [24, 72])
+      .map(Number)
+      .filter((h) => Number.isFinite(h) && h >= 1 && h <= 24 * 30)
+      .slice(0, 4);
+    if (delays.length === 0) {
+      return reply.code(400).send({ error: "At least one delay (1h–30d) is required." });
+    }
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: {
+        followUpConfig: JSON.stringify({
+          enabled: Boolean(enabled),
+          delaysHours: delays,
+          templateId: templateId ?? "",
+        }),
+      },
+    });
+    return { ok: true };
+  });
+
+  // ---- WhatsApp template messages (24h-window compliance) ----
+
+  app.get("/api/message-templates", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    return db.template.findMany({
+      where: { tenantId: auth.tenant.id },
+      orderBy: { createdAt: "desc" },
+    });
+  });
+
+  app.post("/api/message-templates", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { name, category, language, body } = req.body as {
+      name?: string;
+      category?: string;
+      language?: string;
+      body?: string;
+    };
+    if (!name || !/^[a-z0-9_]{1,100}$/.test(name)) {
+      return reply.code(400).send({
+        error: "Template name must be lowercase letters, numbers, and underscores only.",
+      });
+    }
+    if (!body?.trim()) return reply.code(400).send({ error: "Body text is required." });
+    if (variableCount(body) > 2) {
+      return reply
+        .code(400)
+        .send({ error: "Only {{1}} (customer name) and {{2}} (business name) are supported." });
+    }
+    const existing = await db.template.findUnique({
+      where: { tenantId_name: { tenantId: auth.tenant.id, name } },
+    });
+    if (existing) return reply.code(409).send({ error: "A template with this name exists." });
+
+    const template = await db.template.create({
+      data: {
+        tenantId: auth.tenant.id,
+        name,
+        category: category === "MARKETING" ? "MARKETING" : "UTILITY",
+        language: language?.trim() || "en",
+        body: body.trim(),
+      },
+    });
+    return template;
+  });
+
+  app.post("/api/message-templates/:id/submit", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { id } = req.params as { id: string };
+    const template = await db.template.findFirst({ where: { id, tenantId: auth.tenant.id } });
+    if (!template) return reply.code(404).send({ error: "not found" });
+    try {
+      const status = await submitTemplate(auth.tenant, template);
+      return db.template.update({ where: { id }, data: { status, rejectionReason: null } });
+    } catch (err) {
+      if (err instanceof TemplateSubmitError) {
+        return reply.code(400).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.post("/api/message-templates/sync", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const updated = await syncTemplateStatuses(auth.tenant);
+    return { updated };
+  });
+
+  app.delete("/api/message-templates/:id", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { id } = req.params as { id: string };
+    const template = await db.template.findFirst({ where: { id, tenantId: auth.tenant.id } });
+    if (!template) return reply.code(404).send({ error: "not found" });
+    await db.template.delete({ where: { id } });
+    return { ok: true };
+  });
+
   // Manual WhatsApp connection (Embedded Signup replaces this post-app-review):
   // tenant pastes their phone number ID + a Cloud API token; we verify both work.
   app.post("/api/tenant/whatsapp", async (req, reply) => {
     const auth = await requireAuth(req, reply);
     if (!auth) return;
-    const { phoneNumberId, accessToken } = req.body as {
+    const { phoneNumberId, accessToken, wabaId } = req.body as {
       phoneNumberId?: string;
       accessToken?: string;
+      wabaId?: string;
     };
     if (!phoneNumberId?.trim() || !accessToken?.trim()) {
       return reply.code(400).send({ error: "Phone number ID and access token are required." });
@@ -113,7 +234,11 @@ export function registerApiRoutes(
     });
     await db.tenant.update({
       where: { id: auth.tenant.id },
-      data: { waPhoneNumberId: phoneNumberId.trim(), waAccessToken: accessToken.trim() },
+      data: {
+        waPhoneNumberId: phoneNumberId.trim(),
+        waAccessToken: accessToken.trim(),
+        ...(wabaId?.trim() ? { waWabaId: wabaId.trim() } : {}),
+      },
     });
     return { ok: true, number: info.display_phone_number, name: info.verified_name };
   });

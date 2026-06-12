@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type BusinessProfile, type TenantInfo } from "@/lib/api";
+import {
+  api,
+  type BusinessProfile,
+  type FollowUpSettings,
+  type MessageTemplate,
+  type TenantInfo,
+} from "@/lib/api";
 import { ProfileForm } from "@/components/ProfileForm";
+import { TemplateManager } from "@/components/TemplateManager";
 
 export default function SettingsPage() {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
@@ -12,10 +19,22 @@ export default function SettingsPage() {
 
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [wabaId, setWabaId] = useState("");
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
 
+  const [followUps, setFollowUps] = useState<FollowUpSettings | null>(null);
+  const [fuTemplates, setFuTemplates] = useState<MessageTemplate[]>([]);
+  const [fuMsg, setFuMsg] = useState<string | null>(null);
+
   useEffect(() => {
-    api.tenant().then(setTenant).catch(() => {});
+    api
+      .tenant()
+      .then((t) => {
+        setTenant(t);
+        setFollowUps(t.followUps);
+      })
+      .catch(() => {});
+    api.messageTemplates().then(setFuTemplates).catch(() => {});
   }, []);
 
   if (!tenant) return <p className="p-6 text-sm text-muted">Loading…</p>;
@@ -40,11 +59,16 @@ export default function SettingsPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await api.connectWhatsApp({ phoneNumberId, accessToken });
+      const res = await api.connectWhatsApp({
+        phoneNumberId,
+        accessToken,
+        wabaId: wabaId || undefined,
+      });
       setConnectMsg(`Connected: ${res.name} (${res.number})`);
-      setTenant({ ...tenant, waConnected: true });
+      setTenant({ ...tenant, waConnected: true, wabaConfigured: tenant.wabaConfigured || !!wabaId });
       setPhoneNumberId("");
       setAccessToken("");
+      setWabaId("");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -77,6 +101,12 @@ export default function SettingsPage() {
               placeholder="Access token"
               className="rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary"
             />
+            <input
+              value={wabaId}
+              onChange={(e) => setWabaId(e.target.value)}
+              placeholder="WhatsApp Business Account ID (for templates)"
+              className="tnum rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary sm:col-span-2"
+            />
           </div>
           <button
             disabled={saving || !phoneNumberId || !accessToken}
@@ -85,6 +115,94 @@ export default function SettingsPage() {
             {tenant.waConnected ? "Update connection" : "Connect"}
           </button>
         </form>
+      </section>
+
+      <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-3 font-semibold">Message templates</h2>
+        <TemplateManager wabaConfigured={tenant.wabaConfigured} />
+      </section>
+
+      <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-1 font-semibold">Automatic follow-ups</h2>
+        <p className="mb-3 text-xs text-muted">
+          When a customer goes quiet after your last message, Azayon checks in for you — a natural
+          AI message inside the 24h window, your approved template after it.
+        </p>
+        {fuMsg && (
+          <p className="mb-3 rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">{fuMsg}</p>
+        )}
+        {followUps && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setFuMsg(null);
+              try {
+                await api.saveFollowUps(followUps);
+                setFuMsg("Follow-up settings saved.");
+              } catch (err) {
+                setError((err as Error).message);
+              }
+            }}
+            className="space-y-3"
+          >
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={followUps.enabled}
+                onChange={(e) => setFollowUps({ ...followUps, enabled: e.target.checked })}
+              />
+              <span className="font-medium">Follow up automatically when customers go quiet</span>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Check-in schedule (hours after silence)</span>
+              <input
+                value={followUps.delaysHours.join(", ")}
+                onChange={(e) =>
+                  setFollowUps({
+                    ...followUps,
+                    delaysHours: e.target.value
+                      .split(",")
+                      .map((s) => Number(s.trim()))
+                      .filter((n) => Number.isFinite(n) && n > 0),
+                  })
+                }
+                placeholder="24, 72"
+                className="tnum w-48 rounded-card border border-line px-3 py-2 outline-none focus:border-primary"
+              />
+              <span className="mt-1 block text-xs text-muted">
+                e.g. &quot;24, 72&quot; = first nudge after a day, second after three more days,
+                then stop.
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">
+                Template for closed-window follow-ups
+              </span>
+              <select
+                value={followUps.templateId}
+                onChange={(e) => setFollowUps({ ...followUps, templateId: e.target.value })}
+                className="w-full max-w-md rounded-card border border-line bg-white px-3 py-2 outline-none focus:border-primary"
+              >
+                <option value="">None — skip when the 24h window is closed</option>
+                {fuTemplates
+                  .filter((t) => t.status === "approved")
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+              </select>
+              {fuTemplates.every((t) => t.status !== "approved") && (
+                <span className="mt-1 block text-xs text-muted">
+                  No approved templates yet — create and submit one above.
+                </span>
+              )}
+            </label>
+            <button className="rounded-card bg-primary-dark px-4 py-2 text-sm font-semibold text-white">
+              Save follow-up settings
+            </button>
+          </form>
+        )}
       </section>
 
       <section className="rounded-card border border-line bg-white p-5">

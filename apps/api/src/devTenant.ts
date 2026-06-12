@@ -45,12 +45,16 @@ const STAGES = ["New Lead", "Qualified", "Booking Requested", "Booked", "Visited
 
 export async function ensureDevTenant(): Promise<Tenant> {
   const waPhoneNumberId = process.env.WA_PHONE_NUMBER_ID || null;
+  const waWabaId = process.env.WA_WABA_ID || null;
   const existing = await db.tenant.findFirst({ where: { name: "ABC Physio (dev)" } });
   if (existing) {
     // Keep the tenant bound to whatever number .env points at — the webhook
     // matches tenants by phone_number_id, and creds often land after first seed.
-    if (existing.waPhoneNumberId !== waPhoneNumberId) {
-      return db.tenant.update({ where: { id: existing.id }, data: { waPhoneNumberId } });
+    if (existing.waPhoneNumberId !== waPhoneNumberId || existing.waWabaId !== waWabaId) {
+      return db.tenant.update({
+        where: { id: existing.id },
+        data: { waPhoneNumberId, waWabaId },
+      });
     }
     return existing;
   }
@@ -60,6 +64,7 @@ export async function ensureDevTenant(): Promise<Tenant> {
       businessProfile: JSON.stringify(PROFILE),
       stages: JSON.stringify(STAGES),
       waPhoneNumberId,
+      waWabaId,
     },
   });
 }

@@ -25,12 +25,38 @@ model Tenant {
   waPhoneNumberId String?
   // Per-tenant Cloud API token (their WABA). Null = fall back to env (dev).
   waAccessToken   String?
+  // WhatsApp Business Account ID — needed for template submission/status.
+  waWabaId        String?
+  // JSON: { enabled, delaysHours: number[], templateId } — auto no-reply sequences
+  followUpConfig  String   @default("{}")
   createdAt       DateTime @default(now())
 
   users     User[]
   contacts  Contact[]
   messages  Message[]
   followUps FollowUp[]
+  templates Template[]
+}
+
+// WhatsApp template message (required for messaging outside the 24h window).
+// Lifecycle: draft -> pending (submitted to Meta) -> approved | rejected.
+model Template {
+  id              String   @id @default(cuid())
+  tenantId        String
+  // Meta rules: lowercase letters, digits, underscores
+  name            String
+  language        String   @default("en")
+  category        String   @default("UTILITY") // UTILITY | MARKETING
+  // Body text; {{1}} = customer name, {{2}} = business name
+  body            String
+  status          String   @default("draft") // draft | pending | approved | rejected
+  rejectionReason String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, name])
 }
 
 model User {

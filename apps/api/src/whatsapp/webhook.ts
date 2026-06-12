@@ -60,13 +60,28 @@ function verifySignature(raw: Buffer, header: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+interface TemplateStatusValue {
+  event?: string;
+  message_template_name?: string;
+  reason?: string | null;
+}
+
 async function processPayload(queue: QueueDriver, payload: unknown): Promise<void> {
-  const entries = (payload as { entry?: Array<{ changes?: Array<{ value?: WebhookValue }> }> })
-    .entry;
+  const entries = (
+    payload as {
+      entry?: Array<{ id?: string; changes?: Array<{ field?: string; value?: WebhookValue }> }>;
+    }
+  ).entry;
   if (!Array.isArray(entries)) return;
 
   for (const entry of entries) {
     for (const change of entry.changes ?? []) {
+      // Template approval/rejection decisions arrive on their own field;
+      // entry.id is the WABA id for these.
+      if (change.field === "message_template_status_update") {
+        await handleTemplateStatus(entry.id, change.value as TemplateStatusValue);
+        continue;
+      }
       const value = change.value;
       if (!value?.messages) continue;
 
@@ -79,7 +94,7 @@ async function processPayload(queue: QueueDriver, payload: unknown): Promise<voi
         continue;
       }
 
-      for (const msg of value.messages) {
+      for (const msg of value.messages ?? []) {
         if (msg.type !== "text" || !msg.text?.body) continue; // media: Slice 2
         // Click-to-WhatsApp ad attribution rides in for free on the referral object.
         const source = msg.referral
@@ -96,4 +111,23 @@ async function processPayload(queue: QueueDriver, payload: unknown): Promise<voi
       }
     }
   }
+}
+
+async function handleTemplateStatus(
+  wabaId: string | undefined,
+  value: TemplateStatusValue | undefined,
+): Promise<void> {
+  if (!wabaId || !value?.message_template_name || !value.event) return;
+  const status = value.event.toLowerCase(); // approved | rejected | pending | paused...
+  const tenant =
+    (await db.tenant.findFirst({ where: { waWabaId: wabaId } })) ??
+    (config.WA_WABA_ID === wabaId
+      ? await db.tenant.findFirst({ where: { waPhoneNumberId: config.WA_PHONE_NUMBER_ID } })
+      : null);
+  if (!tenant) return;
+  await db.template.updateMany({
+    where: { tenantId: tenant.id, name: value.message_template_name },
+    data: { status, rejectionReason: value.reason ?? null },
+  });
+  console.log(`[webhook] template "${value.message_template_name}" -> ${status}`);
 }

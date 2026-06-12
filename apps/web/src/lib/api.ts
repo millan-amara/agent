@@ -45,14 +45,33 @@ export interface BusinessProfile {
   businessHours?: string;
 }
 
+export interface FollowUpSettings {
+  enabled: boolean;
+  delaysHours: number[];
+  templateId: string;
+}
+
+export interface MessageTemplate {
+  id: string;
+  name: string;
+  language: string;
+  category: string;
+  body: string;
+  status: "draft" | "pending" | "approved" | "rejected" | string;
+  rejectionReason: string | null;
+  createdAt: string;
+}
+
 export interface TenantInfo {
   id: string;
   name: string;
   vertical: string;
   onboarded: boolean;
   waConnected: boolean;
+  wabaConfigured: boolean;
   stages: string[];
   profile: BusinessProfile;
+  followUps: FollowUpSettings;
 }
 
 export interface Me {
@@ -101,11 +120,27 @@ export const api = {
     name?: string;
     completeOnboarding?: boolean;
   }) => request<{ ok: true }>("/api/tenant/profile", { method: "PUT", body: JSON.stringify(body) }),
-  connectWhatsApp: (body: { phoneNumberId: string; accessToken: string }) =>
+  connectWhatsApp: (body: { phoneNumberId: string; accessToken: string; wabaId?: string }) =>
     request<{ ok: true; number: string; name: string }>("/api/tenant/whatsapp", {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  saveFollowUps: (body: FollowUpSettings) =>
+    request<{ ok: true }>("/api/tenant/followups", { method: "PUT", body: JSON.stringify(body) }),
+
+  // template messages
+  messageTemplates: () => request<MessageTemplate[]>("/api/message-templates"),
+  createTemplate: (body: { name: string; category: string; language: string; body: string }) =>
+    request<MessageTemplate>("/api/message-templates", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  submitTemplate: (id: string) =>
+    request<MessageTemplate>(`/api/message-templates/${id}/submit`, { method: "POST" }),
+  syncTemplates: () =>
+    request<{ updated: number }>("/api/message-templates/sync", { method: "POST" }),
+  deleteTemplate: (id: string) =>
+    request<{ ok: true }>(`/api/message-templates/${id}`, { method: "DELETE" }),
 
   // simulator
   simulator: () => request<{ contact: ContactDetail | null }>("/api/simulator"),
