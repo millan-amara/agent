@@ -1,0 +1,87 @@
+// Dev runs on SQLite (zero local services). Production target is Postgres —
+// the schema deliberately avoids SQLite-only or Postgres-only features so the
+// switch is a datasource swap + migration. Enums are strings for the same reason.
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tenant {
+  id              String   @id @default(cuid())
+  name            String
+  // JSON: { description, services: [{name, price}], faqs: [{q, a}], tone,
+  //         languages, neverSay: [], bookingInfo, businessHours }
+  businessProfile String
+  // JSON array of pipeline stage names, first = default for new leads
+  stages          String
+  aiEnabled       Boolean  @default(true)
+  waPhoneNumberId String?
+  createdAt       DateTime @default(now())
+
+  contacts  Contact[]
+  messages  Message[]
+  followUps FollowUp[]
+}
+
+model Contact {
+  id            String    @id @default(cuid())
+  tenantId      String
+  phone         String
+  name          String?
+  stage         String
+  // JSON object of custom fields the AI captures during qualification
+  fields        String    @default("{}")
+  source        String?
+  aiPaused      Boolean   @default(false)
+  optedOut      Boolean   @default(false)
+  needsHuman    Boolean   @default(false)
+  // Drives the 24h customer-service-window check for outbound sends
+  lastInboundAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  messages  Message[]
+  followUps FollowUp[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, stage])
+}
+
+model Message {
+  id          String   @id @default(cuid())
+  tenantId    String
+  contactId   String
+  direction   String // "in" | "out"
+  author      String // "customer" | "ai" | "human" | "system"
+  kind        String   @default("text") // "text" | "event" (AI actions shown in timeline)
+  text        String
+  // Meta's wamid — unique so redelivered webhooks are idempotent
+  waMessageId String?  @unique
+  createdAt   DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  contact Contact @relation(fields: [contactId], references: [id])
+
+  @@index([contactId, createdAt])
+}
+
+model FollowUp {
+  id        String   @id @default(cuid())
+  tenantId  String
+  contactId String
+  dueAt     DateTime
+  note      String
+  status    String   @default("scheduled") // scheduled | sent | skipped | canceled
+  createdAt DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  contact Contact @relation(fields: [contactId], references: [id])
+
+  @@index([status, dueAt])
+}

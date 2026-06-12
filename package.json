@@ -1,0 +1,14 @@
+{
+  "name": "azayon",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/api",
+    "build": "npm run build -w apps/api",
+    "simulator": "npm run simulator -w apps/api",
+    "db:push": "npm run db:push -w apps/api"
+  }
+}
