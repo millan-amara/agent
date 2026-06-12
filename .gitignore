@@ -4,3 +4,6 @@ dist/
 *.db
 *.db-journal
 .DS_Store
+.next/
+.env.local
+.env*.local
