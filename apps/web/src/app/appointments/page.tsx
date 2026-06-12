@@ -22,7 +22,7 @@ export default function AppointmentsPage() {
   }
 
   return (
-    <div className="mx-auto h-full max-w-2xl overflow-y-auto p-4">
+    <div className="mx-auto h-full w-full max-w-4xl overflow-y-auto p-4 md:p-6">
       <h1 className="mb-1 font-semibold">Appointments</h1>
       <p className="mb-4 text-sm text-muted">
         Booked by your AI (and your team). Reminders go out automatically the day before.

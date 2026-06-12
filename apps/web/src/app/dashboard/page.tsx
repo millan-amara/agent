@@ -22,7 +22,7 @@ export default function DashboardPage() {
     : null;
 
   return (
-    <div className="mx-auto h-full max-w-3xl overflow-y-auto p-4">
+    <div className="mx-auto h-full w-full max-w-5xl overflow-y-auto p-4 md:p-6">
       <h1 className="mb-1 font-semibold">Last 30 days</h1>
       <p className="mb-4 text-sm text-muted">What Azayon has been doing for your business.</p>
 
@@ -36,7 +36,7 @@ export default function DashboardPage() {
         </Link>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="New leads" value={data.newLeads} />
         <Stat label="Qualified" value={data.qualified} />
         <Stat label="Appointments booked" value={data.booked} />

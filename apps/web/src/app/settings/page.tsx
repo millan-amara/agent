@@ -94,7 +94,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="mx-auto h-full max-w-2xl space-y-4 overflow-y-auto p-4">
+    <div className="mx-auto h-full w-full max-w-4xl space-y-4 overflow-y-auto p-4 md:p-6">
       <nav className="flex gap-1.5 overflow-x-auto pb-1">
         {SETTINGS_TABS.map((t) => (
           <button
