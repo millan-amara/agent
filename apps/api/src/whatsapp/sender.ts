@@ -23,17 +23,23 @@ export interface MessageSender {
   sendText(tenant: Tenant, contact: Contact, text: string): Promise<void>;
 }
 
-/** Sends via the Meta WhatsApp Cloud API. Enforces the 24h window. */
+/**
+ * Sends via the Meta WhatsApp Cloud API. Enforces the 24h window.
+ * Simulated contacts (in-app simulator) are persisted upstream but never sent.
+ * Uses the tenant's own token/number when connected, env credentials otherwise.
+ */
 export class WhatsAppCloudSender implements MessageSender {
   async sendText(tenant: Tenant, contact: Contact, text: string): Promise<void> {
+    if (contact.isSimulated) return;
     if (!windowIsOpen(contact)) throw new WindowClosedError();
     const phoneNumberId = tenant.waPhoneNumberId ?? config.WA_PHONE_NUMBER_ID;
+    const token = tenant.waAccessToken ?? config.WA_ACCESS_TOKEN;
     const res = await fetch(
       `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${config.WA_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -51,9 +57,14 @@ export class WhatsAppCloudSender implements MessageSender {
   }
 }
 
-/** Prints to stdout — used by the dev simulator. The window is always open. */
+/** Prints to stdout — used by the CLI dev simulator. The window is always open. */
 export class ConsoleSender implements MessageSender {
   async sendText(_tenant: Tenant, _contact: Contact, text: string): Promise<void> {
     process.stdout.write(`\n🤖 ${text}\n\n> `);
   }
+}
+
+/** Resolves a Cloud API token for tenant-level Graph calls (connect/verify). */
+export function tenantToken(tenant: Tenant): string | undefined {
+  return tenant.waAccessToken ?? config.WA_ACCESS_TOKEN;
 }

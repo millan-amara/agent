@@ -14,6 +14,8 @@ generator client {
 model Tenant {
   id              String   @id @default(cuid())
   name            String
+  vertical        String   @default("general")
+  onboarded       Boolean  @default(false)
   // JSON: { description, services: [{name, price}], faqs: [{q, a}], tone,
   //         languages, neverSay: [], bookingInfo, businessHours }
   businessProfile String
@@ -21,11 +23,35 @@ model Tenant {
   stages          String
   aiEnabled       Boolean  @default(true)
   waPhoneNumberId String?
+  // Per-tenant Cloud API token (their WABA). Null = fall back to env (dev).
+  waAccessToken   String?
   createdAt       DateTime @default(now())
 
+  users     User[]
   contacts  Contact[]
   messages  Message[]
   followUps FollowUp[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  tenantId     String
+  createdAt    DateTime @default(now())
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  sessions Session[]
+}
+
+model Session {
+  token     String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model Contact {
@@ -37,6 +63,8 @@ model Contact {
   // JSON object of custom fields the AI captures during qualification
   fields        String    @default("{}")
   source        String?
+  // Simulator contacts run the real agent loop but never touch WhatsApp
+  isSimulated   Boolean   @default(false)
   aiPaused      Boolean   @default(false)
   optedOut      Boolean   @default(false)
   needsHuman    Boolean   @default(false)

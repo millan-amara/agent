@@ -1,9 +1,11 @@
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { config, whatsappConfigured } from "./config.js";
 import { runAgentTurn } from "./agent/agent.js";
 import { registerApiRoutes } from "./api/routes.js";
+import { registerAuthRoutes } from "./auth/routes.js";
 import { ensureDevTenant } from "./devTenant.js";
 import { startFollowUpWorker } from "./followups.js";
 import { InMemoryDebouncedQueue, parseContactKey } from "./queue/queue.js";
@@ -14,8 +16,7 @@ async function main() {
   const sender = whatsappConfigured ? new WhatsAppCloudSender() : new ConsoleSender();
   if (!whatsappConfigured) {
     console.warn(
-      "[boot] WA_ACCESS_TOKEN / WA_PHONE_NUMBER_ID not set — outbound messages print to console. " +
-        "Use `npm run simulator` for interactive testing.",
+      "[boot] WA_ACCESS_TOKEN / WA_PHONE_NUMBER_ID not set — outbound messages print to console.",
     );
   }
   if (!config.ANTHROPIC_API_KEY) {
@@ -26,6 +27,12 @@ async function main() {
     const { tenantId, contactId } = parseContactKey(key);
     await runAgentTurn(tenantId, contactId, sender);
   }, config.DEBOUNCE_SECONDS * 1000);
+
+  // Simulator traffic should feel instant; webhook traffic batches.
+  const simQueue = new InMemoryDebouncedQueue(async (key) => {
+    const { tenantId, contactId } = parseContactKey(key);
+    await runAgentTurn(tenantId, contactId, sender);
+  }, 1200);
 
   const tenant = await ensureDevTenant();
   console.log(`[boot] dev tenant ready: ${tenant.name} (${tenant.id})`);
@@ -43,11 +50,13 @@ async function main() {
     }
   });
 
-  await app.register(cors, { origin: true });
+  await app.register(cookie);
+  await app.register(cors, { origin: true, credentials: true });
   await app.register(websocket);
 
   registerWebhookRoutes(app, queue);
-  registerApiRoutes(app, tenant.id, sender);
+  registerAuthRoutes(app);
+  registerApiRoutes(app, sender, simQueue);
   app.get("/health", async () => ({ ok: true }));
 
   startFollowUpWorker(sender);
