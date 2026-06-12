@@ -5,12 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, AuthError, type Me } from "@/lib/api";
 
-const TABS = [
+const TABS: Array<{ href: string; label: string; icon: string; mobileHidden?: boolean }> = [
+  { href: "/dashboard", label: "Home", icon: "🏠" },
   { href: "/inbox", label: "Inbox", icon: "💬" },
   { href: "/pipeline", label: "Pipeline", icon: "📋" },
   { href: "/appointments", label: "Bookings", icon: "📅" },
-  { href: "/contacts", label: "Contacts", icon: "👥" },
-  { href: "/simulator", label: "Simulator", icon: "🧪" },
+  { href: "/contacts", label: "Contacts", icon: "👥", mobileHidden: true },
+  { href: "/simulator", label: "Simulator", icon: "🧪", mobileHidden: true },
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
@@ -93,9 +94,9 @@ export function NavShell({ children }: { children: React.ReactNode }) {
 
       <main className="min-h-0 flex-1">{children}</main>
 
-      {/* Mobile bottom nav */}
+      {/* Mobile bottom nav — five tabs max; the rest live on desktop */}
       <nav className="flex shrink-0 border-t border-line bg-white md:hidden">
-        {TABS.map((t) => {
+        {TABS.filter((t) => !t.mobileHidden).map((t) => {
           const active = pathname.startsWith(t.href);
           return (
             <Link

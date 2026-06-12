@@ -5,6 +5,7 @@ import websocket from "@fastify/websocket";
 import { config, whatsappConfigured } from "./config.js";
 import { runAgentTurn } from "./agent/agent.js";
 import { registerApiRoutes } from "./api/routes.js";
+import { registerDashboardRoutes } from "./api/dashboard.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { ensureDevTenant } from "./devTenant.js";
 import { startFollowUpWorker } from "./followups.js";
@@ -61,6 +62,7 @@ async function main() {
   registerWebhookRoutes(app, queue);
   registerAuthRoutes(app);
   registerApiRoutes(app, sender, simQueue);
+  registerDashboardRoutes(app);
   app.get("/health", async () => ({ ok: true }));
 
   startFollowUpWorker(sender);

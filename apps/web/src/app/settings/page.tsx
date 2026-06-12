@@ -379,6 +379,11 @@ export default function SettingsPage() {
       </section>
 
       <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-3 font-semibold">Account</h2>
+        <PasswordForm />
+      </section>
+
+      <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-3 font-semibold">Tell Azayon how to reply</h2>
         {error && <p className="mb-3 rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{error}</p>}
         {saved && (
@@ -389,5 +394,56 @@ export default function SettingsPage() {
         <ProfileForm initial={tenant.profile} saving={saving} submitLabel="Save changes" onSubmit={(p) => void save(p)} />
       </section>
     </div>
+  );
+}
+
+function PasswordForm() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setMsg(null);
+        setErr(null);
+        try {
+          await api.changePassword({ current, next });
+          setMsg("Password changed.");
+          setCurrent("");
+          setNext("");
+        } catch (error) {
+          setErr((error as Error).message);
+        }
+      }}
+      className="space-y-3"
+    >
+      {msg && <p className="rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">{msg}</p>}
+      {err && <p className="rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{err}</p>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <input
+          type="password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          placeholder="Current password"
+          className="rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+        <input
+          type="password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          placeholder="New password (min 8 characters)"
+          className="rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary"
+        />
+      </div>
+      <button
+        disabled={!current || next.length < 8}
+        className="rounded-card border border-line px-4 py-2 text-sm font-medium hover:bg-canvas disabled:opacity-50"
+      >
+        Change password
+      </button>
+    </form>
   );
 }

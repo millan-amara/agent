@@ -33,6 +33,9 @@ model Tenant {
   bookingConfig   String   @default("{}")
   // Tenant's own Paystack secret key — enables in-chat payment collection
   paystackSecretKey String?
+  // Azayon subscription state. Pilot phase: trial only, no enforcement.
+  plan            String   @default("trial") // trial | active | past_due
+  trialEndsAt     DateTime?
   createdAt       DateTime @default(now())
 
   users        User[]
@@ -42,6 +45,21 @@ model Tenant {
   templates    Template[]
   appointments Appointment[]
   invoices     Invoice[]
+  usage        Usage[]
+}
+
+// Per-tenant per-day LLM/message metering — the margin math behind pricing.
+model Usage {
+  id           String @id @default(cuid())
+  tenantId     String
+  day          String // "YYYY-MM-DD"
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
+  llmCalls     Int    @default(0)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, day])
 }
 
 model Appointment {

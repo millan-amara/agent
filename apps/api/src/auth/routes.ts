@@ -30,6 +30,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         vertical: template.id,
         businessProfile: JSON.stringify(template.profile),
         stages: JSON.stringify(template.stages),
+        trialEndsAt: new Date(Date.now() + 14 * 86_400_000),
       },
     });
     const user = await db.user.create({
@@ -57,6 +58,23 @@ export function registerAuthRoutes(app: FastifyInstance): void {
 
   app.post("/api/auth/logout", async (req, reply) => {
     await destroySession(req, reply);
+    return { ok: true };
+  });
+
+  app.post("/api/auth/password", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { current, next } = req.body as { current?: string; next?: string };
+    if (!next || next.length < 8) {
+      return reply.code(400).send({ error: "New password must be at least 8 characters." });
+    }
+    if (!current || !(await verifyPassword(current, auth.user.passwordHash))) {
+      return reply.code(401).send({ error: "Current password is wrong." });
+    }
+    await db.user.update({
+      where: { id: auth.user.id },
+      data: { passwordHash: await hashPassword(next) },
+    });
     return { ok: true };
   });
 

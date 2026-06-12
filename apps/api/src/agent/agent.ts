@@ -88,6 +88,7 @@ export async function runAgentTurn(
       tools,
       messages,
     });
+    await recordUsage(tenant.id, response.usage);
 
     if (response.stop_reason === "refusal") {
       await executeTool(ctx, "escalate_to_human", {
@@ -130,6 +131,28 @@ export async function runAgentTurn(
   await executeTool(ctx, "escalate_to_human", {
     reason: "Agent exceeded the tool-call limit in one turn",
   });
+}
+
+/** Per-tenant daily token metering — drives pricing-margin visibility. */
+async function recordUsage(tenantId: string, usage: Anthropic.Usage): Promise<void> {
+  const day = new Date().toISOString().slice(0, 10);
+  const inputTokens =
+    usage.input_tokens +
+    (usage.cache_creation_input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0);
+  try {
+    await db.usage.upsert({
+      where: { tenantId_day: { tenantId, day } },
+      create: { tenantId, day, inputTokens, outputTokens: usage.output_tokens, llmCalls: 1 },
+      update: {
+        inputTokens: { increment: inputTokens },
+        outputTokens: { increment: usage.output_tokens },
+        llmCalls: { increment: 1 },
+      },
+    });
+  } catch (err) {
+    console.error("[usage] failed to record:", err);
+  }
 }
 
 async function sendReply(ctx: ToolContext, sender: MessageSender, text: string): Promise<void> {

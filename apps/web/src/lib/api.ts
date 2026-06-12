@@ -128,10 +128,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface DashboardData {
+  period: string;
+  newLeads: number;
+  qualified: number;
+  booked: number;
+  followUpsSent: number;
+  recovered: number;
+  paidKes: number;
+  needsHuman: number;
+  activeConversations: number;
+  health: { waConnected: boolean; aiEnabled: boolean };
+  billing: {
+    plan: string;
+    trialEndsAt: string | null;
+    usageThisMonth: { llmCalls: number; inputTokens: number; outputTokens: number };
+  };
+}
+
 export const api = {
   // auth
   signup: (body: { email: string; password: string; businessName: string; vertical: string }) =>
     request<{ ok: true }>("/api/auth/signup", { method: "POST", body: JSON.stringify(body) }),
+  changePassword: (body: { current: string; next: string }) =>
+    request<{ ok: true }>("/api/auth/password", { method: "POST", body: JSON.stringify(body) }),
+  dashboard: () => request<DashboardData>("/api/dashboard"),
   login: (body: { email: string; password: string }) =>
     request<{ ok: true }>("/api/auth/login", { method: "POST", body: JSON.stringify(body) }),
   logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
