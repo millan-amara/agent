@@ -51,7 +51,11 @@ async function main() {
   });
 
   await app.register(cookie);
-  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cors, {
+    origin: true,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  });
   await app.register(websocket);
 
   registerWebhookRoutes(app, queue);
