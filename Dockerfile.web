@@ -15,6 +15,9 @@ ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# This app ships no static assets, so apps/web/public may not exist. Ensure it
+# does so the runner stage's COPY of it doesn't fail the build.
+RUN mkdir -p apps/web/public
 RUN npm run build -w apps/web
 
 FROM base AS runner
