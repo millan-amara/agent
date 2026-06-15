@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import * as Sentry from "@sentry/node";
-import { config, whatsappConfigured } from "./config.js";
+import { config, whatsappConfigured, isProd } from "./config.js";
 import { runAgentTurn } from "./agent/agent.js";
 import { registerApiRoutes } from "./api/routes.js";
 import { registerDashboardRoutes } from "./api/dashboard.js";
@@ -40,8 +40,14 @@ process.on("uncaughtException", (err) => {
 });
 
 async function main() {
-  const sender = whatsappConfigured ? new WhatsAppCloudSender() : new ConsoleSender();
-  if (!whatsappConfigured) {
+  // In production always use the real Cloud API sender: tenants carry their own
+  // per-tenant token + phone number (set via Settings → connect WhatsApp), so the
+  // env-level `whatsappConfigured` gate (a Slice-1 single-tenant holdover) must
+  // not force the console sender and silently drop replies. The console sender is
+  // only for the local CLI/dev simulator.
+  const useRealSender = whatsappConfigured || isProd;
+  const sender = useRealSender ? new WhatsAppCloudSender() : new ConsoleSender();
+  if (!useRealSender) {
     console.warn(
       "[boot] WA_ACCESS_TOKEN / WA_PHONE_NUMBER_ID not set — outbound messages print to console.",
     );
