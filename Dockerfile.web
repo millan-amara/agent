@@ -23,6 +23,9 @@ RUN npm run build -w apps/web
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=3000
+# Next's standalone server defaults to binding localhost, which Railway's edge
+# can't reach ("Application failed to respond"). Bind all interfaces.
+ENV HOSTNAME=0.0.0.0
 # Next standalone output: server + only the node_modules it traced.
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
