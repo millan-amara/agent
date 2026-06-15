@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { api, type ContactDetail } from "@/lib/api";
 
 export function LeadPanel({
@@ -90,20 +91,31 @@ export function LeadPanel({
           </h3>
           <ul className="space-y-1.5">
             {detail.invoices!.map((i) => (
-              <li key={i.id} className="flex items-center justify-between gap-2 text-sm">
-                <span className="truncate text-muted">{i.description}</span>
-                <span className="tnum shrink-0 font-medium">
-                  KES {i.amountKes.toLocaleString()}
-                </span>
-                <span
-                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                    i.status === "paid"
-                      ? "bg-primary-soft text-primary-dark"
-                      : "border border-line bg-canvas text-muted"
-                  }`}
-                >
-                  {i.status}
-                </span>
+              <li key={i.id} className="space-y-1.5 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-muted">{i.description}</span>
+                  <span className="tnum shrink-0 font-medium">
+                    KES {i.amountKes.toLocaleString()}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                      i.status === "paid"
+                        ? "bg-primary-soft text-primary-dark"
+                        : i.status === "pending_approval"
+                          ? "bg-attentionSoft text-attention"
+                          : "border border-line bg-canvas text-muted"
+                    }`}
+                  >
+                    {i.status === "pending_approval" ? "needs approval" : i.status}
+                  </span>
+                </div>
+                {i.status === "pending_approval" && (
+                  <ApproveInvoiceButton
+                    contactId={detail.id}
+                    invoiceId={i.id}
+                    onApproved={onChanged}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -140,6 +152,75 @@ export function LeadPanel({
           ? "Messaging window open — free-form replies allowed."
           : "Window closed — only template messages until the customer writes again."}
       </section>
+    </div>
+  );
+}
+
+function ApproveInvoiceButton({
+  contactId,
+  invoiceId,
+  onApproved,
+}: {
+  contactId: string;
+  invoiceId: string;
+  onApproved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Set when the 24h window was closed: the link is minted but couldn't be
+  // pushed, so we show it for the owner to copy/send manually.
+  const [manualLink, setManualLink] = useState<string | null>(null);
+
+  if (manualLink) {
+    return (
+      <div className="space-y-1 rounded-card border border-line bg-canvas p-2">
+        <p className="text-[11px] text-muted">
+          Window closed — link ready, send it once the customer writes back:
+        </p>
+        <div className="flex items-center gap-1.5">
+          <input
+            readOnly
+            value={manualLink}
+            onFocus={(e) => e.currentTarget.select()}
+            className="min-w-0 flex-1 truncate rounded border border-line bg-white px-1.5 py-1 text-[11px]"
+          />
+          <button
+            onClick={() => void navigator.clipboard?.writeText(manualLink)}
+            className="shrink-0 rounded border border-line px-2 py-1 text-[11px] font-medium hover:bg-white"
+          >
+            Copy
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <button
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            const res = await api.approveInvoice(contactId, invoiceId);
+            if (!res.delivered && res.payUrl) {
+              // Keep this component mounted so the link stays visible — a refresh
+              // would flip the invoice to "pending" and unmount the button.
+              setManualLink(res.payUrl);
+            } else {
+              onApproved();
+            }
+          } catch (err) {
+            setError((err as Error).message);
+            setBusy(false);
+          }
+        }}
+        className="w-full rounded-card bg-primary px-2 py-1.5 text-xs font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+      >
+        {busy ? "Sending…" : "Approve & send payment link"}
+      </button>
+      {error && <p className="text-[11px] text-attention">{error}</p>}
     </div>
   );
 }

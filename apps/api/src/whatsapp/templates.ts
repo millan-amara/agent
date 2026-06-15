@@ -1,6 +1,7 @@
 import type { Contact, Template, Tenant } from "@prisma/client";
 import { config } from "../config.js";
 import { db } from "../db.js";
+import { fetchWithTimeout } from "../http.js";
 
 /**
  * WhatsApp template messages — the only legal way to message a customer
@@ -32,7 +33,7 @@ export async function submitTemplate(tenant: Tenant, template: Template): Promis
       "WhatsApp Business Account ID and access token are required before templates can be submitted.",
     );
   }
-  const res = await fetch(`${GRAPH}/${c.wabaId}/message_templates`, {
+  const res = await fetchWithTimeout(`${GRAPH}/${c.wabaId}/message_templates`, {
     method: "POST",
     headers: { Authorization: `Bearer ${c.token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -74,7 +75,7 @@ export async function submitTemplate(tenant: Tenant, template: Template): Promis
 export async function syncTemplateStatuses(tenant: Tenant): Promise<number> {
   const c = creds(tenant);
   if (!c) return 0;
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${GRAPH}/${c.wabaId}/message_templates?fields=name,status,rejected_reason&limit=100`,
     { headers: { Authorization: `Bearer ${c.token}` } },
   );
@@ -101,13 +102,13 @@ export async function sendTemplateMessage(
   tenant: Tenant,
   contact: Contact,
   template: Template,
-): Promise<void> {
+): Promise<string | null> {
   const phoneNumberId = tenant.waPhoneNumberId ?? config.WA_PHONE_NUMBER_ID;
   const token = tenant.waAccessToken ?? config.WA_ACCESS_TOKEN;
   const vars = variableCount(template.body);
   const params = [contact.name ?? "there", tenant.name].slice(0, vars);
 
-  const res = await fetch(`${GRAPH}/${phoneNumberId}/messages`, {
+  const res = await fetchWithTimeout(`${GRAPH}/${phoneNumberId}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -134,6 +135,8 @@ export async function sendTemplateMessage(
     const body = await res.text();
     throw new Error(`Template send failed (${res.status}): ${body}`);
   }
+  const data = (await res.json()) as { messages?: Array<{ id?: string }> };
+  return data.messages?.[0]?.id ?? null;
 }
 
 /** Renders the template body the way the customer will read it (for the timeline). */

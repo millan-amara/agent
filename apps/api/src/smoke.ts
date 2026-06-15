@@ -14,11 +14,15 @@ const queue = new InMemoryDebouncedQueue(async (key) => {
   await runAgentTurn(tenantId, contactId, sender);
 }, 100);
 
-const phone = "smoke-" + Date.now();
+const run = Date.now();
+const phone = "smoke-" + run;
+// wamids are globally unique — derive per-run so the test is repeatable.
+const wamid1 = `wamid.smoke1.${run}`;
+const wamid2 = `wamid.smoke2.${run}`;
 
 // 1. Webhook redelivery is idempotent
-await handleInboundText(queue, { tenantId: tenant.id, phone, text: "STOP", waMessageId: "wamid.smoke1" });
-await handleInboundText(queue, { tenantId: tenant.id, phone, text: "STOP", waMessageId: "wamid.smoke1" });
+await handleInboundText(queue, { tenantId: tenant.id, phone, text: "STOP", waMessageId: wamid1 });
+await handleInboundText(queue, { tenantId: tenant.id, phone, text: "STOP", waMessageId: wamid1 });
 await queue.idle();
 
 const contact = await db.contact.findUniqueOrThrow({
@@ -41,7 +45,7 @@ assert.ok(
 );
 
 // 3. Opted-out contacts never trigger another agent turn
-await handleInboundText(queue, { tenantId: tenant.id, phone, text: "hello again", waMessageId: "wamid.smoke2" });
+await handleInboundText(queue, { tenantId: tenant.id, phone, text: "hello again", waMessageId: wamid2 });
 await queue.idle();
 const after = await db.message.count({
   where: { contactId: contact.id, direction: "out", author: "ai" },

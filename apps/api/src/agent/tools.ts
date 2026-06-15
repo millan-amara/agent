@@ -3,7 +3,9 @@ import type { Contact, Tenant } from "@prisma/client";
 import { db } from "../db.js";
 import { publish } from "../events.js";
 import { computeAvailableSlots, formatSlot, parseBookingConfig } from "../booking.js";
-import { createPaymentLink, PaystackError } from "../paystack.js";
+import { createPaymentLink, createPendingInvoice, PaystackError } from "../paystack.js";
+import { hasKnowledgeBase, searchKb } from "../kb.js";
+import { pushEvent } from "../google.js";
 
 export interface ToolContext {
   tenant: Tenant;
@@ -14,12 +16,28 @@ export interface ToolContext {
 export interface TenantCapabilities {
   booking: boolean;
   payments: boolean;
+  kb: boolean;
 }
 
-export function tenantCapabilities(tenant: Tenant): TenantCapabilities {
+/**
+ * Whether this tenant gates customer-facing payments behind owner approval
+ * (stakes-aware: money is the one thing the AI drafts but never sends on a
+ * guess). Default off — empty config preserves the auto-send behavior.
+ */
+export function paymentApprovalRequired(tenant: Tenant): boolean {
+  try {
+    const cfg = JSON.parse(tenant.requireApproval) as { payments?: boolean };
+    return cfg.payments === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function tenantCapabilities(tenant: Tenant): Promise<TenantCapabilities> {
   return {
     booking: parseBookingConfig(tenant).enabled,
     payments: Boolean(tenant.paystackSecretKey),
+    kb: await hasKnowledgeBase(tenant.id),
   };
 }
 
@@ -52,6 +70,22 @@ export function buildTools(stages: string[], caps: TenantCapabilities): Anthropi
         },
       },
     );
+  }
+  if (caps.kb) {
+    tools.push({
+      name: "search_knowledge_base",
+      description:
+        "Search the business's knowledge base (uploaded docs/FAQs) for information to answer the " +
+        "customer. Use this whenever the answer might be in the business's own materials and isn't " +
+        "already in your instructions. Quote only what the results contain — never invent.",
+      input_schema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "What to look up, in the customer's terms" },
+        },
+        required: ["query"],
+      },
+    });
   }
   if (caps.payments) {
     tools.push({
@@ -258,7 +292,7 @@ export async function executeTool(
       if (!slot) {
         return "Error: that slot is no longer available. Call get_available_slots again and offer fresh options.";
       }
-      await db.appointment.create({
+      const appointment = await db.appointment.create({
         data: {
           tenantId: ctx.tenant.id,
           contactId: ctx.contact.id,
@@ -267,6 +301,15 @@ export async function executeTool(
           note: String(input.note ?? ""),
         },
       });
+      // Push to the tenant's Google Calendar when connected (best-effort).
+      const eventId = await pushEvent(
+        ctx.tenant,
+        { startsAt: slot.startsAt, endsAt: slot.endsAt, note: String(input.note ?? "") },
+        ctx.contact.name ?? ctx.contact.phone,
+      ).catch(() => null);
+      if (eventId) {
+        await db.appointment.update({ where: { id: appointment.id }, data: { googleEventId: eventId } });
+      }
       await logEvent(ctx, `Appointment booked: ${formatSlot(slot.startsAt)}`);
       return `Booked for ${formatSlot(slot.startsAt)}. Confirm this to the customer.`;
     }
@@ -275,23 +318,46 @@ export async function executeTool(
       if (!Number.isFinite(amount) || amount <= 0) {
         return "Error: amount_kes must be a positive number.";
       }
+      const description = String(input.description ?? "Payment");
       try {
-        const { payUrl } = await createPaymentLink(
-          ctx.tenant,
-          ctx.contact,
-          amount,
-          String(input.description ?? "Payment"),
-        );
-        await logEvent(
-          ctx,
-          `Invoice created: KES ${amount.toLocaleString()} — ${String(input.description ?? "")}`,
-        );
+        // Stakes-aware gate: when the tenant requires approval, the AI proposes
+        // the payment but a human sends the link. Never fabricate a link here.
+        if (paymentApprovalRequired(ctx.tenant)) {
+          await createPendingInvoice(ctx.tenant, ctx.contact, amount, description);
+          await logEvent(
+            ctx,
+            `Payment proposed (awaiting approval): KES ${amount.toLocaleString()} — ${description}`,
+          );
+          return (
+            `Payment of KES ${amount.toLocaleString()} for "${description}" has been noted for the ` +
+            `team to approve. Tell the customer the payment link will be sent shortly — do NOT invent ` +
+            `or promise a specific link yourself.`
+          );
+        }
+        const { payUrl } = await createPaymentLink(ctx.tenant, ctx.contact, amount, description);
+        await logEvent(ctx, `Invoice created: KES ${amount.toLocaleString()} — ${description}`);
         return `Invoice created. Send the customer this payment link (M-Pesa or card): ${payUrl}`;
       } catch (err) {
         if (err instanceof PaystackError) {
           return `Error: ${err.message} Tell the customer the team will send payment details shortly, and escalate.`;
         }
         throw err;
+      }
+    }
+    case "search_knowledge_base": {
+      const query = String(input.query ?? "").trim();
+      if (!query) return "Error: query is required.";
+      try {
+        const results = await searchKb(ctx.tenant.id, query);
+        if (results.length === 0) {
+          return "No relevant information found in the knowledge base. If you can't answer from your instructions, say you'll check and use escalate_to_human.";
+        }
+        return `Knowledge base results (use only what's relevant; do not invent beyond this):\n\n${results
+          .map((r, i) => `[${i + 1}] ${r}`)
+          .join("\n\n")}`;
+      } catch (err) {
+        console.error("[kb] search failed:", err);
+        return "Knowledge base is temporarily unavailable. Answer from your instructions or escalate if unsure.";
       }
     }
     case "stop_messaging": {

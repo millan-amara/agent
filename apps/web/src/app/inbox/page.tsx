@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type Conversation, type ContactDetail, type TenantInfo } from "@/lib/api";
+import { api, type Conversation, type ContactDetail, type TenantInfo, type TeamMember } from "@/lib/api";
 import { useLive } from "@/lib/useLive";
 import { ChatPane } from "@/components/ChatPane";
 import { LeadPanel } from "@/components/LeadPanel";
@@ -12,7 +12,15 @@ export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContactDetail | null>(null);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const memberLabel = (id?: string | null) => {
+    if (!id) return null;
+    const m = members.find((x) => x.id === id);
+    if (!m) return null;
+    return (m.name ?? m.email).slice(0, 2).toUpperCase();
+  };
 
   const refreshList = useCallback(() => {
     api.conversations().then(setConversations).catch((e) => setError((e as Error).message));
@@ -24,6 +32,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     api.tenant().then(setTenant).catch((e) => setError((e as Error).message));
+    api.team().then(setMembers).catch(() => {});
     refreshList();
   }, [refreshList]);
 
@@ -68,8 +77,8 @@ export default function InboxPage() {
           {conversations && (
             <p className="text-xs text-muted">
               {conversations.length} total
-              {conversations.some((c) => c.needsHuman) &&
-                ` · ${conversations.filter((c) => c.needsHuman).length} need you`}
+              {conversations.some((c) => c.needsHuman || c.needsReview) &&
+                ` · ${conversations.filter((c) => c.needsHuman || c.needsReview).length} need you`}
             </p>
           )}
         </div>
@@ -105,7 +114,17 @@ export default function InboxPage() {
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] text-muted">{c.stage}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-muted">{c.stage}</span>
+                  {memberLabel(c.assignedUserId) && (
+                    <span
+                      className="rounded-full bg-primary-soft px-1.5 py-0.5 text-[9px] font-semibold text-primary-dark"
+                      title="Assigned"
+                    >
+                      {memberLabel(c.assignedUserId)}
+                    </span>
+                  )}
+                </div>
               </button>
             ))
           )}

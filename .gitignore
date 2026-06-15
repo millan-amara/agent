@@ -7,3 +7,5 @@ dist/
 .next/
 .env.local
 .env*.local
+# Legacy-CRM migration snapshot — real customer PII + bcrypt hashes. Never commit.
+apps/api/scripts/migration-data/

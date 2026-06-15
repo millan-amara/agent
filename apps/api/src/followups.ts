@@ -4,6 +4,9 @@ import { publish } from "./events.js";
 import { runAgentTurn } from "./agent/agent.js";
 import { renderTemplate, sendTemplateMessage } from "./whatsapp/templates.js";
 import { windowIsOpen, type MessageSender } from "./whatsapp/sender.js";
+import { withinDailyCap } from "./whatsapp/ratelimit.js";
+import { pollQualityRatings } from "./whatsapp/quality.js";
+import { runRetentionSweep } from "./retention.js";
 
 export interface FollowUpConfig {
   enabled?: boolean;
@@ -40,6 +43,8 @@ export function startFollowUpWorker(sender: MessageSender, intervalMs = 60_000):
       await executeDueFollowUps(sender);
       await scheduleAutoFollowUps();
       await sendAppointmentReminders(sender);
+      await pollQualityRatings();
+      await runRetentionSweep();
     } catch (err) {
       console.error("[followups] tick failed:", err);
     }
@@ -57,6 +62,10 @@ async function sendAppointmentReminders(sender: MessageSender): Promise<void> {
   });
   for (const appt of due) {
     if (appt.contact.optedOut) continue;
+    if (!(await withinDailyCap(appt.tenant, appt.contactId))) {
+      console.log(`[reminders] daily cap reached for ${appt.contact.phone} — reminder deferred`);
+      continue;
+    }
     if (!windowIsOpen(appt.contact) && !appt.contact.isSimulated) {
       // Reminders are utility messages but still need templates out-of-window;
       // mark handled so we don't spin. Template-based reminders: later.
@@ -75,19 +84,18 @@ async function sendAppointmentReminders(sender: MessageSender): Promise<void> {
       minute: "2-digit",
       hour12: false,
     });
+    const reminderText = `Reminder from ${appt.tenant.name}: your appointment is on ${when}. Reply here if you need to change it.`;
     try {
-      await sender.sendText(
-        appt.tenant,
-        appt.contact,
-        `Reminder from ${appt.tenant.name}: your appointment is on ${when}. Reply here if you need to change it.`,
-      );
+      const waMessageId = await sender.sendText(appt.tenant, appt.contact, reminderText);
       await db.message.create({
         data: {
           tenantId: appt.tenantId,
           contactId: appt.contactId,
           direction: "out",
           author: "ai",
-          text: `Reminder from ${appt.tenant.name}: your appointment is on ${when}. Reply here if you need to change it.`,
+          text: reminderText,
+          waMessageId,
+          status: waMessageId ? "sent" : null,
         },
       });
       await db.appointment.update({
@@ -120,6 +128,14 @@ async function executeDueFollowUps(sender: MessageSender): Promise<void> {
     });
     if (lastMessage && lastMessage.direction === "in") {
       await db.followUp.update({ where: { id: fu.id }, data: { status: "canceled" } });
+      continue;
+    }
+
+    // Outbound guardrail — don't exceed the per-contact daily cap with nudges.
+    const tenantForCap = await db.tenant.findUnique({ where: { id: fu.tenantId } });
+    if (tenantForCap && !(await withinDailyCap(tenantForCap, contact.id))) {
+      console.log(`[followups] daily cap reached for ${contact.phone} — skipping nudge`);
+      await db.followUp.update({ where: { id: fu.id }, data: { status: "skipped" } });
       continue;
     }
 
@@ -160,7 +176,7 @@ async function sendClosedWindowFollowUp(
     return;
   }
 
-  await sendTemplateMessage(tenant, contact, template);
+  const waMessageId = await sendTemplateMessage(tenant, contact, template);
   await db.message.create({
     data: {
       tenantId,
@@ -168,6 +184,8 @@ async function sendClosedWindowFollowUp(
       direction: "out",
       author: "ai",
       text: renderTemplate(template, tenant, contact),
+      waMessageId,
+      status: waMessageId ? "sent" : null,
     },
   });
   await db.message.create({

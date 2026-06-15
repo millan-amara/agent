@@ -11,12 +11,17 @@ import {
 } from "@/lib/api";
 import { ProfileForm } from "@/components/ProfileForm";
 import { TemplateManager } from "@/components/TemplateManager";
+import { KnowledgeBase } from "@/components/KnowledgeBase";
+import { TeamManager } from "@/components/TeamManager";
+import { EmbeddedSignup } from "@/components/EmbeddedSignup";
 
 const SETTINGS_TABS = [
   { id: "ai", label: "Your AI" },
+  { id: "knowledge", label: "Knowledge" },
   { id: "whatsapp", label: "WhatsApp" },
   { id: "automation", label: "Automation" },
   { id: "payments", label: "Payments" },
+  { id: "team", label: "Team" },
   { id: "account", label: "Account" },
 ] as const;
 type TabId = (typeof SETTINGS_TABS)[number]["id"];
@@ -42,6 +47,10 @@ export default function SettingsPage() {
   const [paystackKey, setPaystackKey] = useState("");
   const [paystackMsg, setPaystackMsg] = useState<string | null>(null);
 
+  const [cap, setCap] = useState<string>("");
+  const [retention, setRetention] = useState<string>("");
+  const [complianceMsg, setComplianceMsg] = useState<string | null>(null);
+
   useEffect(() => {
     api
       .tenant()
@@ -49,6 +58,8 @@ export default function SettingsPage() {
         setTenant(t);
         setFollowUps(t.followUps);
         setBooking(t.booking);
+        setCap(t.compliance.dailyMessageCap?.toString() ?? "");
+        setRetention(t.compliance.dataRetentionDays?.toString() ?? "");
       })
       .catch(() => {});
     api.messageTemplates().then(setFuTemplates).catch(() => {});
@@ -121,7 +132,16 @@ export default function SettingsPage() {
         ) : (
           <p className="text-sm text-muted">Not connected yet.</p>
         )}
+        {tenant.waConnected && <HealthPill health={tenant.health} />}
         {connectMsg && <p className="mt-1 text-sm text-success">{connectMsg}</p>}
+        <div className="mt-3">
+          <EmbeddedSignup
+            onConnected={(label) => {
+              setConnectMsg(`Connected: ${label}`);
+              setTenant({ ...tenant, waConnected: true, wabaConfigured: true });
+            }}
+          />
+        </div>
         <form onSubmit={connect} className="mt-3 space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <input
@@ -160,6 +180,36 @@ export default function SettingsPage() {
         <p className="mb-3 text-xs text-muted">
           When enabled, the AI offers real slots from this calendar and books them in chat.
         </p>
+        <div className="mb-4 rounded-card border border-line bg-canvas px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-medium">Google Calendar</span>
+              <p className="text-xs text-muted">
+                {tenant.googleConnected
+                  ? "Connected — bookings sync both ways."
+                  : "Sync bookings to your calendar and block busy times."}
+              </p>
+            </div>
+            {tenant.googleConnected ? (
+              <button
+                onClick={async () => {
+                  await api.disconnectGoogle().catch(() => {});
+                  setTenant({ ...tenant, googleConnected: false });
+                }}
+                className="rounded-card border border-line px-3 py-1.5 text-sm font-medium hover:bg-white"
+              >
+                Disconnect
+              </button>
+            ) : (
+              <a
+                href={api.googleAuthUrl()}
+                className="rounded-card bg-primary-dark px-3 py-1.5 text-sm font-semibold text-white"
+              >
+                Connect
+              </a>
+            )}
+          </div>
+        </div>
         {bookingMsg && (
           <p className="mb-3 rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">
             {bookingMsg}
@@ -321,6 +371,33 @@ export default function SettingsPage() {
             {tenant.paystackConfigured ? "Update" : "Connect"}
           </button>
         </form>
+
+        {tenant.paystackConfigured && (
+          <label className="mt-4 flex items-start gap-2 border-t border-line pt-4 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={tenant.paymentApproval}
+              onChange={async (e) => {
+                const payments = e.target.checked;
+                setError(null);
+                try {
+                  await api.saveApprovals(payments);
+                  setTenant({ ...tenant, paymentApproval: payments });
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+              }}
+            />
+            <span>
+              <span className="font-medium">Approve payment links before they’re sent</span>
+              <span className="mt-0.5 block text-xs text-muted">
+                When on, the AI proposes a payment and you tap to send the link from the inbox —
+                money never goes out on a guess. Other captures stay automatic.
+              </span>
+            </span>
+          </label>
+        )}
       </section>
       )}
 
@@ -423,6 +500,79 @@ export default function SettingsPage() {
       </section>
       )}
 
+      {tab === "account" && (
+      <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-1 font-semibold">Data &amp; compliance</h2>
+        <p className="mb-3 text-xs text-muted">
+          Guardrails that protect your WhatsApp number and your customers&apos; data.
+        </p>
+        {complianceMsg && (
+          <p className="mb-3 rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">
+            {complianceMsg}
+          </p>
+        )}
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setComplianceMsg(null);
+            setError(null);
+            try {
+              await api.saveCompliance({
+                dailyMessageCap: cap.trim() ? Number(cap) : null,
+                dataRetentionDays: retention.trim() ? Number(retention) : null,
+              });
+              setComplianceMsg("Saved.");
+            } catch (err) {
+              setError((err as Error).message);
+            }
+          }}
+          className="space-y-3"
+        >
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">Max messages per customer per day</span>
+            <input
+              type="number"
+              value={cap}
+              onChange={(e) => setCap(e.target.value)}
+              placeholder="6 (default)"
+              className="tnum w-32 rounded-card border border-line px-3 py-2 outline-none focus:border-primary"
+            />
+            <span className="mt-1 block text-xs text-muted">
+              Caps proactive nudges so you never spam a lead. Blank = platform default (6).
+            </span>
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium">Delete conversation history after (days)</span>
+            <input
+              type="number"
+              value={retention}
+              onChange={(e) => setRetention(e.target.value)}
+              placeholder="Keep forever"
+              className="tnum w-32 rounded-card border border-line px-3 py-2 outline-none focus:border-primary"
+            />
+            <span className="mt-1 block text-xs text-muted">
+              Blank = keep forever. Contacts and stats are always kept; only message text ages out.
+            </span>
+          </label>
+          <button className="rounded-card bg-primary-dark px-4 py-2 text-sm font-semibold text-white">
+            Save compliance settings
+          </button>
+        </form>
+        <div className="mt-5 border-t border-line pt-4">
+          <h3 className="mb-1 text-sm font-semibold">Export your data</h3>
+          <p className="mb-2 text-xs text-muted">
+            Download all contacts, conversations, appointments, and invoices as JSON (data portability).
+          </p>
+          <button
+            onClick={() => void api.exportData().catch((err) => setError((err as Error).message))}
+            className="rounded-card border border-line px-4 py-2 text-sm font-medium hover:bg-canvas"
+          >
+            Download export
+          </button>
+        </div>
+      </section>
+      )}
+
       {tab === "ai" && (
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="mb-3 font-semibold">Tell Azayon how to reply</h2>
@@ -434,6 +584,44 @@ export default function SettingsPage() {
         )}
         <ProfileForm initial={tenant.profile} saving={saving} submitLabel="Save changes" onSubmit={(p) => void save(p)} />
       </section>
+      )}
+
+      {tab === "knowledge" && (
+      <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-3 font-semibold">Knowledge base</h2>
+        <KnowledgeBase />
+      </section>
+      )}
+
+      {tab === "team" && (
+      <section className="rounded-card border border-line bg-white p-5">
+        <h2 className="mb-3 font-semibold">Team &amp; activity</h2>
+        <TeamManager isOwner={tenant.role === "owner"} />
+      </section>
+      )}
+    </div>
+  );
+}
+
+function HealthPill({ health }: { health: TenantInfo["health"] }) {
+  const rating = health.qualityRating ?? "UNKNOWN";
+  const color =
+    rating === "GREEN"
+      ? "bg-green-50 text-success"
+      : rating === "YELLOW"
+        ? "bg-amber-50 text-warning"
+        : rating === "RED"
+          ? "bg-red-50 text-danger"
+          : "bg-canvas text-muted";
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className={`rounded-full px-2.5 py-1 font-medium ${color}`}>
+        Quality: {rating === "UNKNOWN" ? "Checking…" : rating}
+      </span>
+      {health.messagingLimit && (
+        <span className="rounded-full bg-canvas px-2.5 py-1 text-muted">
+          Limit: {health.messagingLimit.replace("TIER_", "")}
+        </span>
       )}
     </div>
   );

@@ -16,6 +16,11 @@ export async function handleInboundText(
     waMessageId?: string;
     profileName?: string;
     source?: string;
+    mediaType?: string;
+    mediaUrl?: string;
+    // The channel this inbound arrived on. WhatsApp today; the seam lets a future
+    // email/meeting adapter emit the same normalized shape without re-plumbing.
+    channel?: string;
   },
 ): Promise<void> {
   const tenant = await db.tenant.findUniqueOrThrow({ where: { id: args.tenantId } });
@@ -43,6 +48,9 @@ export async function handleInboundText(
         author: "customer",
         text: args.text,
         waMessageId: args.waMessageId,
+        channel: args.channel ?? "whatsapp",
+        mediaType: args.mediaType,
+        mediaUrl: args.mediaUrl,
       },
     });
   } catch (err: unknown) {

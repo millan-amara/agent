@@ -21,6 +21,13 @@ export function StatePill({ contact, size = "sm" }: { contact: ApiContact; size?
       </span>
     );
   }
+  if (contact.needsReview) {
+    return (
+      <span className={`${cls} rounded-full bg-attentionSoft font-medium text-attention`}>
+        ⚠️ Needs review
+      </span>
+    );
+  }
   if (contact.aiPaused) {
     return (
       <span className={`${cls} rounded-full border border-line bg-canvas font-medium text-muted`}>

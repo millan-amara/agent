@@ -69,6 +69,12 @@ ${
 - Never quote or invoice amounts that are not in the services list.
 `
     : ""
+}${
+  caps.kb
+    ? `# Knowledge base
+- This business has uploaded reference material (docs/FAQs). When a customer asks something that isn't covered in the information above, call search_knowledge_base before saying you'll check. Answer only from what it returns; if it has nothing relevant, escalate rather than guess.
+`
+    : ""
 }# CRM duties (do these silently via tools, never mention them)
 - When you learn the customer's name, interest, budget, timeline, or other useful details, record them with update_lead.
 - Move the lead through the pipeline with set_stage as the conversation progresses. Stages: ${stages.join(" → ")}.

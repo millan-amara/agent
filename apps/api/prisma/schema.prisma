@@ -36,6 +36,26 @@ model Tenant {
   // Azayon subscription state. Pilot phase: trial only, no enforcement.
   plan            String   @default("trial") // trial | active | past_due
   trialEndsAt     DateTime?
+  // WhatsApp health (Meta phone-number quality + messaging-limit tier),
+  // refreshed from quality webhooks and a periodic Graph poll.
+  waQualityRating   String?   // GREEN | YELLOW | RED | UNKNOWN
+  waMessagingLimit  String?   // e.g. TIER_1K, TIER_10K, TIER_100K, TIER_UNLIMITED
+  waQualityCheckedAt DateTime?
+  // Outbound guardrails. Null = platform default applied in code.
+  dailyMessageCap Int?     // max outbound messages per contact per day
+  dataRetentionDays Int?   // null = keep forever; else retention sweep deletes older messages
+  // Stakes-aware approval gate (JSON: { payments?: bool }). Empty = auto-apply
+  // everything (legacy behavior). When payments=true the AI drafts an invoice as
+  // pending_approval and an owner sends the link — money never leaves on a guess.
+  requireApproval String  @default("{}")
+  // Azayon subscription billing (platform Paystack account, not the tenant's).
+  planTier               String?   // starter | growth | pro (null while on trial)
+  paystackCustomerCode   String?
+  paystackSubscriptionCode String?
+  planRenewsAt           DateTime?
+  // Google Calendar sync (per-tenant OAuth).
+  googleRefreshToken String?
+  googleCalendarId   String?  @default("primary")
   createdAt       DateTime @default(now())
 
   users        User[]
@@ -46,20 +66,27 @@ model Tenant {
   appointments Appointment[]
   invoices     Invoice[]
   usage        Usage[]
+  kbDocs       KbDoc[]
+  kbChunks     KbChunk[]
+  auditLogs    AuditLog[]
+  broadcasts   Broadcast[]
 }
 
-// Per-tenant per-day LLM/message metering — the margin math behind pricing.
+// Per-tenant per-day-per-model LLM/message metering — the margin math behind
+// pricing. Split by model so the cheap router vs the reply model are costed
+// separately (cost tiering).
 model Usage {
   id           String @id @default(cuid())
   tenantId     String
   day          String // "YYYY-MM-DD"
+  model        String @default("") // the model id these tokens were spent on
   inputTokens  Int    @default(0)
   outputTokens Int    @default(0)
   llmCalls     Int    @default(0)
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
-  @@unique([tenantId, day])
+  @@unique([tenantId, day, model])
 }
 
 model Appointment {
@@ -71,6 +98,7 @@ model Appointment {
   status         String    @default("booked") // booked | cancelled | completed
   note           String    @default("")
   reminderSentAt DateTime?
+  googleEventId  String?   // set when synced to the tenant's Google Calendar
   createdAt      DateTime  @default(now())
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])
@@ -86,9 +114,11 @@ model Invoice {
   // KES subunits (cents) — Paystack convention
   amountCents Int
   description String
-  status      String    @default("pending") // pending | paid | failed | cancelled
+  status      String    @default("pending") // pending_approval | pending | paid | failed | cancelled
   paystackRef String    @unique
-  payUrl      String
+  // Null until the payment link is generated (pending_approval invoices have no
+  // link yet — it's created when an owner approves the send).
+  payUrl      String?
   paidAt      DateTime?
   createdAt   DateTime  @default(now())
 
@@ -120,15 +150,100 @@ model Template {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String?
-  tenantId     String
-  createdAt    DateTime @default(now())
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String?
+  phone         String?  // carried over from the legacy CRM; informational
+  emailVerified Boolean  @default(false)
+  role          String   @default("owner") // owner | agent
+  locale        String   @default("en")    // en | sw
+  tenantId      String
+  createdAt     DateTime @default(now())
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  tenant   Tenant      @relation(fields: [tenantId], references: [id])
   sessions Session[]
+  authTokens AuthToken[]
+  assignedContacts Contact[] @relation("AssignedAgent")
+}
+
+// Append-only activity trail for team accountability (assignments, takeovers,
+// stage/plan/team changes). Owner-visible.
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String?
+  action    String
+  detail    String   @default("")
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+}
+
+// A template campaign to a segment. Outside the 24h window only approved
+// templates are legal, so a broadcast always sends an approved Template.
+model Broadcast {
+  id         String   @id @default(cuid())
+  tenantId   String
+  templateId String
+  segment    String   @default("{}") // JSON: { stage?, source?, all? }
+  status     String   @default("draft") // draft | sending | done | failed
+  total      Int      @default(0)
+  sent       Int      @default(0)
+  failed     Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+}
+
+// Single-use tokens for email-driven flows (password reset, email verification).
+model AuthToken {
+  token     String   @id
+  userId    String
+  purpose   String // reset | verify
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, purpose])
+}
+
+// Uploaded knowledge-base source (doc/FAQ paste). Chunked + embedded for RAG.
+model KbDoc {
+  id        String   @id @default(cuid())
+  tenantId  String
+  title     String
+  source    String   @default("paste") // paste | upload
+  status    String   @default("ready") // ready | processing | failed
+  createdAt DateTime @default(now())
+
+  tenant Tenant    @relation(fields: [tenantId], references: [id])
+  chunks KbChunk[]
+
+  @@index([tenantId])
+}
+
+// One embedded chunk of a KbDoc. embedding = JSON-encoded float array;
+// retrieval is brute-force cosine in JS at pilot scale (pgvector later).
+model KbChunk {
+  id        String @id @default(cuid())
+  tenantId  String
+  docId     String
+  ordinal   Int
+  content   String
+  embedding String // JSON number[]
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  doc    KbDoc  @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([docId])
 }
 
 model Session {
@@ -146,20 +261,30 @@ model Contact {
   phone         String
   name          String?
   stage         String
+  // Open pipeline value in cents (KES). Carried from migrated deals; the home
+  // for "potential revenue" so it isn't buried in the fields JSON.
+  valueCents    Int       @default(0)
   // JSON object of custom fields the AI captures during qualification
   fields        String    @default("{}")
   source        String?
+  // Team assignment — which staff member owns this conversation.
+  assignedUserId String?
   // Simulator contacts run the real agent loop but never touch WhatsApp
   isSimulated   Boolean   @default(false)
   aiPaused      Boolean   @default(false)
   optedOut      Boolean   @default(false)
   needsHuman    Boolean   @default(false)
+  // Set when an agent turn failed (AI down / threw). The raw inbound is already
+  // saved; this flags "the net caught it but the AI couldn't process it" so the
+  // owner sees it instead of the customer being silently ghosted.
+  needsReview   Boolean   @default(false)
   // Drives the 24h customer-service-window check for outbound sends
   lastInboundAt DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  assignedUser User?         @relation("AssignedAgent", fields: [assignedUserId], references: [id])
   messages     Message[]
   followUps    FollowUp[]
   appointments Appointment[]
@@ -177,8 +302,18 @@ model Message {
   author      String // "customer" | "ai" | "human" | "system"
   kind        String   @default("text") // "text" | "event" (AI actions shown in timeline)
   text        String
-  // Meta's wamid — unique so redelivered webhooks are idempotent
+  // Meta's wamid — unique so redelivered webhooks are idempotent. Also set on
+  // outbound sends so delivery-status webhooks can be correlated back.
   waMessageId String?  @unique
+  // Outbound delivery lifecycle from Meta status webhooks.
+  status       String? // sent | delivered | read | failed
+  statusReason String? // failure detail when status = failed
+  // The channel this message arrived/left on. WhatsApp today; the pipeline keeps
+  // this seam so email/meetings can emit the same normalized shape later.
+  channel     String   @default("whatsapp") // whatsapp | email | meeting
+  // Inbound media (voice notes, images). text holds the transcript/caption.
+  mediaType   String?  // audio | image | document | ...
+  mediaUrl    String?  // Meta media id or stored URL for the original
   createdAt   DateTime @default(now())
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id])

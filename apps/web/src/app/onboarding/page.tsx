@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, type BusinessProfile, type TenantInfo } from "@/lib/api";
 import { ProfileForm } from "@/components/ProfileForm";
 import { SimulatorChat } from "@/components/SimulatorChat";
+import { EmbeddedSignup } from "@/components/EmbeddedSignup";
 
 const STEPS = ["Your business", "Try your AI", "Connect WhatsApp"] as const;
 
@@ -137,12 +138,17 @@ export default function OnboardingPage() {
                   ✅ Connected: <span className="font-medium">{connected}</span>
                 </p>
               ) : (
+                <div className="space-y-3">
+                  <EmbeddedSignup onConnected={setConnected} />
+                  <div className="flex items-center gap-2 text-xs text-muted">
+                    <span className="h-px flex-1 bg-line" /> or connect manually{" "}
+                    <span className="h-px flex-1 bg-line" />
+                  </div>
                 <form onSubmit={connect} className="space-y-3">
                   <p className="text-sm text-muted">
                     Connect your WhatsApp Business number via the Meta developer dashboard. You
                     need the <strong>Phone number ID</strong> (WhatsApp → API Setup) and a
-                    permanent <strong>access token</strong>. One-click connection is coming; for
-                    now we&apos;ll wire it manually.
+                    permanent <strong>access token</strong>.
                   </p>
                   <label className="block text-sm">
                     <span className="mb-1 block font-medium">Phone number ID</span>
@@ -168,6 +174,7 @@ export default function OnboardingPage() {
                     {saving ? "Verifying…" : "Connect"}
                   </button>
                 </form>
+                </div>
               )}
             </div>
             <div className="flex justify-between">

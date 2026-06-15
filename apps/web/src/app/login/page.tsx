@@ -57,7 +57,12 @@ export default function LoginPage() {
         >
           {busy ? "Logging in…" : "Log in"}
         </button>
-        <p className="mt-4 text-center text-xs text-muted">
+        <p className="mt-3 text-center text-xs text-muted">
+          <Link href="/forgot-password" className="font-medium text-primary-dark">
+            Forgot your password?
+          </Link>
+        </p>
+        <p className="mt-2 text-center text-xs text-muted">
           New here?{" "}
           <Link href="/signup" className="font-medium text-primary-dark">
             Create your workspace

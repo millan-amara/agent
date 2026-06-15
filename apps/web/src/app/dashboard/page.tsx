@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { api, type DashboardData } from "@/lib/api";
+import { api, type DashboardData, type AttributionSource } from "@/lib/api";
 import { useLive } from "@/lib/useLive";
+import { useT } from "@/lib/i18n";
 
 /** The owner's home screen: what did Azayon make me this month? */
 export default function DashboardPage() {
+  const t = useT();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [sources, setSources] = useState<AttributionSource[]>([]);
 
   const refresh = useCallback(() => {
     api.dashboard().then(setData).catch(() => {});
+    api.attribution().then((r) => setSources(r.sources)).catch(() => {});
   }, []);
   useEffect(() => refresh(), [refresh]);
   useLive(useCallback(() => refresh(), [refresh]));
@@ -23,8 +27,8 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto h-full w-full max-w-5xl overflow-y-auto p-4 md:p-6">
-      <h1 className="mb-1 font-semibold">Last 30 days</h1>
-      <p className="mb-4 text-sm text-muted">What Azayon has been doing for your business.</p>
+      <h1 className="mb-1 font-semibold">{t("dash.title")}</h1>
+      <p className="mb-4 text-sm text-muted">{t("dash.subtitle")}</p>
 
       {data.needsHuman > 0 && (
         <Link
@@ -37,17 +41,17 @@ export default function DashboardPage() {
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="New leads" value={data.newLeads} />
-        <Stat label="Qualified" value={data.qualified} />
-        <Stat label="Appointments booked" value={data.booked} />
-        <Stat label="Follow-ups sent" value={data.followUpsSent} />
+        <Stat label={t("dash.newLeads")} value={data.newLeads} />
+        <Stat label={t("dash.qualified")} value={data.qualified} />
+        <Stat label={t("dash.booked")} value={data.booked} />
+        <Stat label={t("dash.followUps")} value={data.followUpsSent} />
         <Stat
-          label="Leads recovered"
+          label={t("dash.recovered")}
           value={data.recovered}
           hint="replied after a follow-up nudge"
         />
         <Stat
-          label="Payments collected"
+          label={t("dash.payments")}
           value={`KES ${data.paidKes.toLocaleString()}`}
           strong
         />
@@ -85,6 +89,40 @@ export default function DashboardPage() {
           </dl>
         </section>
       </div>
+
+      {sources.length > 0 && (
+        <section className="rounded-card border border-line bg-white p-4">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
+            {t("dash.sources")}
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted">
+                  <th className="pb-2 font-medium">Source</th>
+                  <th className="pb-2 text-right font-medium">Leads</th>
+                  <th className="pb-2 text-right font-medium">Qualified</th>
+                  <th className="pb-2 text-right font-medium">Booked</th>
+                  <th className="pb-2 text-right font-medium">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sources.map((s) => (
+                  <tr key={s.source} className="border-t border-line">
+                    <td className="py-2 pr-2">{s.source}</td>
+                    <td className="py-2 text-right tnum">{s.leads}</td>
+                    <td className="py-2 text-right tnum">{s.qualified}</td>
+                    <td className="py-2 text-right tnum">{s.booked}</td>
+                    <td className="py-2 text-right tnum font-semibold text-primary-dark">
+                      {s.paidKes > 0 ? `KES ${s.paidKes.toLocaleString()}` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

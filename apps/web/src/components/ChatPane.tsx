@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, type ContactDetail, type ApiMessage } from "@/lib/api";
+import { api, type ContactDetail, type ApiMessage, type TeamMember } from "@/lib/api";
 import { StatePill } from "./StatePill";
 
 function displayName(c: { name: string | null; phone: string }) {
@@ -17,6 +17,25 @@ function Bubble({ m }: { m: ApiMessage }) {
     );
   }
   const inbound = m.direction === "in";
+  const mediaLabel =
+    m.mediaType === "audio"
+      ? "🎤 Voice note"
+      : m.mediaType === "image"
+        ? "🖼️ Image"
+        : m.mediaType
+          ? "📎 Attachment"
+          : null;
+  // Outbound delivery state (only meaningful for real WhatsApp sends).
+  const tick =
+    m.status === "read"
+      ? "✓✓"
+      : m.status === "delivered"
+        ? "✓✓"
+        : m.status === "sent"
+          ? "✓"
+          : m.status === "failed"
+            ? "⚠ failed"
+            : "";
   return (
     <div className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
       <div
@@ -28,6 +47,9 @@ function Bubble({ m }: { m: ApiMessage }) {
               : "border-primary/20 bg-primary-soft"
         }`}
       >
+        {mediaLabel && (
+          <div className="mb-0.5 text-[11px] font-medium opacity-70">{mediaLabel}</div>
+        )}
         {m.text}
         <div
           className={`mt-1 text-right text-[10px] ${
@@ -36,6 +58,9 @@ function Bubble({ m }: { m: ApiMessage }) {
         >
           {m.author === "ai" ? "AI · " : m.author === "human" ? "You · " : ""}
           {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {!inbound && tick && (
+            <span className={`ml-1 ${m.status === "read" ? "text-sky-400" : ""}`}>{tick}</span>
+          )}
         </div>
       </div>
     </div>
@@ -54,11 +79,26 @@ export function ChatPane({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [detail.messages.length]);
+
+  useEffect(() => {
+    api.team().then(setMembers).catch(() => {});
+  }, []);
+
+  const assign = async (userId: string) => {
+    setError(null);
+    try {
+      await api.assignContact(detail.id, userId || null);
+      onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
 
   const send = async () => {
     if (!draft.trim() || sending) return;
@@ -100,6 +140,19 @@ export function ChatPane({
           </div>
           <div className="tnum text-xs text-muted">{detail.phone}</div>
         </div>
+        <select
+          value={detail.assignedUserId ?? ""}
+          onChange={(e) => void assign(e.target.value)}
+          title="Assign conversation"
+          className="max-w-[8rem] rounded-card border border-line bg-white px-2 py-1.5 text-xs text-muted outline-none focus:border-primary"
+        >
+          <option value="">Unassigned</option>
+          {members.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name ?? m.email}
+            </option>
+          ))}
+        </select>
         {!detail.optedOut && (
           <button
             onClick={toggleAi}

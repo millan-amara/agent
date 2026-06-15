@@ -1,5 +1,6 @@
 import type { Tenant } from "@prisma/client";
 import { db } from "./db.js";
+import { busyTimes, calendarConnected } from "./google.js";
 
 /**
  * Internal booking calendar: weekly opening hours → bookable slots, minus
@@ -60,6 +61,13 @@ export async function computeAvailableSlots(
     where: { tenantId: tenant.id, status: "booked", startsAt: { gte: new Date(), lte: horizon } },
     select: { startsAt: true, endsAt: true },
   });
+
+  // Two-way sync: when Google Calendar is connected, treat its busy intervals
+  // as booked so externally-scheduled time isn't offered as available.
+  if (calendarConnected(tenant)) {
+    const busy = await busyTimes(tenant, new Date(), horizon).catch(() => []);
+    for (const b of busy) booked.push({ startsAt: b.start, endsAt: b.end });
+  }
 
   const slots: Array<{ startsAt: Date; endsAt: Date }> = [];
   const now = Date.now();
