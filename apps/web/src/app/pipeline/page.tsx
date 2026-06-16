@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type Conversation, type TenantInfo } from "@/lib/api";
 import { useLive } from "@/lib/useLive";
 import { StatePill } from "@/components/StatePill";
+import { Avatar } from "@/components/ui/Avatar";
 
 export default function PipelinePage() {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
@@ -39,60 +40,77 @@ export default function PipelinePage() {
   if (!tenant) return <p className="p-6 text-sm text-muted">Loading…</p>;
 
   return (
-    <div className="h-full overflow-x-auto overflow-y-hidden p-4">
-      <div className="flex h-full min-w-max gap-3">
-        {tenant.stages.map((stage) => {
-          const cards = contacts.filter((c) => c.stage === stage);
-          return (
-            <div
-              key={stage}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setOverStage(stage);
-              }}
-              onDragLeave={() => setOverStage((s) => (s === stage ? null : s))}
-              onDrop={() => void drop(stage)}
-              className={`flex h-full w-64 shrink-0 flex-col rounded-card border bg-white ${
-                overStage === stage ? "border-primary" : "border-line"
-              }`}
-            >
-              <div className="flex items-center justify-between border-b border-line px-3 py-2">
-                <span className="text-sm font-semibold">{stage}</span>
-                <span className="tnum rounded-full bg-canvas px-2 py-0.5 text-xs text-muted">
-                  {cards.length}
-                </span>
-              </div>
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-                {cards.map((c) => (
-                  <div
-                    key={c.id}
-                    draggable
-                    onDragStart={() => setDragId(c.id)}
-                    onDragEnd={() => setDragId(null)}
-                    className="cursor-grab rounded-card border border-line bg-white p-2.5 shadow-sm active:cursor-grabbing"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium">{c.name ?? c.phone}</span>
-                      <StatePill contact={c} />
+    <div className="flex h-full flex-col">
+      <header className="shrink-0 px-4 pb-2 pt-4 md:px-6">
+        <h1 className="text-xl font-semibold">Pipeline</h1>
+        <p className="text-xs text-muted">Drag leads between stages to track where they are.</p>
+      </header>
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6">
+        <div className="flex h-full min-w-max gap-3">
+          {tenant.stages.map((stage) => {
+            const cards = contacts.filter((c) => c.stage === stage);
+            const over = overStage === stage;
+            return (
+              <div
+                key={stage}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setOverStage(stage);
+                }}
+                onDragLeave={() => setOverStage((s) => (s === stage ? null : s))}
+                onDrop={() => void drop(stage)}
+                className={`flex h-full w-72 shrink-0 flex-col rounded-card border bg-canvas/60 transition-colors ${
+                  over ? "border-primary ring-2 ring-primary/30" : "border-line"
+                }`}
+              >
+                <div className="flex items-center justify-between px-3 py-2.5">
+                  <span className="text-sm font-semibold">{stage}</span>
+                  <span className="tnum grid min-w-5 place-items-center rounded-full bg-line/70 px-1.5 py-0.5 text-xs font-medium text-muted">
+                    {cards.length}
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
+                  {cards.map((c) => (
+                    <div
+                      key={c.id}
+                      draggable
+                      onDragStart={() => setDragId(c.id)}
+                      onDragEnd={() => setDragId(null)}
+                      className={`cursor-grab rounded-card border border-line bg-surface p-2.5 shadow-card transition-shadow hover:shadow-panel active:cursor-grabbing ${
+                        dragId === c.id ? "opacity-50" : ""
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Avatar name={c.name} phone={c.phone} size="sm" attention={c.needsHuman} />
+                          <span className="truncate text-sm font-medium">{c.name ?? c.phone}</span>
+                        </div>
+                      </div>
+                      {c.lastMessage && (
+                        <p className="mt-1.5 truncate text-xs text-muted">{c.lastMessage.text}</p>
+                      )}
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <StatePill contact={c} />
+                        <span className="tnum shrink-0 text-xs text-muted">
+                          {c.lastMessage ? timeAgo(c.lastMessage.createdAt) : ""}
+                        </span>
+                      </div>
                     </div>
-                    {c.lastMessage && (
-                      <p className="mt-1 truncate text-xs text-muted">{c.lastMessage.text}</p>
-                    )}
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className="text-[10px] text-muted">{c.source ?? ""}</span>
-                      <span className="text-[10px] text-muted">
-                        {c.lastMessage ? timeAgo(c.lastMessage.createdAt) : ""}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                {cards.length === 0 && (
-                  <p className="px-1 py-3 text-center text-xs text-muted">Drop leads here</p>
-                )}
+                  ))}
+                  {cards.length === 0 && (
+                    <p
+                      className={`rounded-card border border-dashed px-1 py-6 text-center text-xs text-muted ${
+                        over ? "border-primary/40" : "border-line"
+                      }`}
+                    >
+                      Drop leads here
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

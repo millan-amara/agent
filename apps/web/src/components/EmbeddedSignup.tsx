@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { MessageCircle } from "lucide-react";
 import { api } from "@/lib/api";
+import { Button } from "@/components/ui/Button";
 
 /**
  * One-click WhatsApp connection via Meta Embedded Signup. Renders only when the
@@ -99,13 +101,10 @@ export function EmbeddedSignup({ onConnected }: { onConnected: (label: string) =
 
   return (
     <div className="space-y-2">
-      <button
-        onClick={launch}
-        disabled={!ready || busy}
-        className="rounded-card bg-primary-dark px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-      >
+      <Button size="lg" onClick={launch} disabled={!ready || busy}>
+        <MessageCircle className="size-4" />
         {busy ? "Connecting…" : "Connect WhatsApp in one click"}
-      </button>
+      </Button>
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );

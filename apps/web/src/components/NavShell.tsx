@@ -1,30 +1,56 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  Home,
+  MessagesSquare,
+  Columns3,
+  Calendar,
+  Receipt,
+  Megaphone,
+  Users,
+  FlaskConical,
+  CreditCard,
+  Settings,
+  LogOut,
+  AlertTriangle,
+  MailWarning,
+  Loader2,
+  type LucideIcon,
+} from "lucide-react";
 import { api, AuthError, type Me } from "@/lib/api";
 import { useLocale } from "@/lib/i18n";
+import { Logo } from "@/components/Logo";
 
-type Tab = { href: string; tkey: string; label: string; icon: string; mobileHidden?: boolean; ownerOnly?: boolean };
+type Tab = {
+  href: string;
+  tkey: string;
+  label: string;
+  Icon: LucideIcon;
+  group: "main" | "secondary";
+  mobileHidden?: boolean;
+  ownerOnly?: boolean;
+};
+
 const TABS: Tab[] = [
-  { href: "/dashboard", tkey: "nav.home", label: "Home", icon: "🏠" },
-  { href: "/inbox", tkey: "nav.inbox", label: "Inbox", icon: "💬" },
-  { href: "/pipeline", tkey: "nav.pipeline", label: "Pipeline", icon: "📋" },
-  { href: "/appointments", tkey: "nav.bookings", label: "Bookings", icon: "📅" },
-  { href: "/broadcasts", tkey: "nav.broadcasts", label: "Broadcasts", icon: "📣", mobileHidden: true },
-  { href: "/contacts", tkey: "nav.contacts", label: "Contacts", icon: "👥", mobileHidden: true },
-  { href: "/simulator", tkey: "nav.simulator", label: "Simulator", icon: "🧪", mobileHidden: true },
-  { href: "/billing", tkey: "nav.billing", label: "Billing", icon: "💳", mobileHidden: true, ownerOnly: true },
-  { href: "/settings", tkey: "nav.settings", label: "Settings", icon: "⚙️" },
+  { href: "/dashboard", tkey: "nav.home", label: "Home", Icon: Home, group: "main" },
+  { href: "/inbox", tkey: "nav.inbox", label: "Inbox", Icon: MessagesSquare, group: "main" },
+  { href: "/pipeline", tkey: "nav.pipeline", label: "Pipeline", Icon: Columns3, group: "main" },
+  { href: "/appointments", tkey: "nav.bookings", label: "Bookings", Icon: Calendar, group: "main" },
+  { href: "/invoices", tkey: "nav.invoices", label: "Invoices", Icon: Receipt, group: "main", mobileHidden: true },
+  { href: "/broadcasts", tkey: "nav.broadcasts", label: "Broadcasts", Icon: Megaphone, group: "main", mobileHidden: true },
+  { href: "/contacts", tkey: "nav.contacts", label: "Contacts", Icon: Users, group: "main", mobileHidden: true },
+  { href: "/simulator", tkey: "nav.simulator", label: "Simulator", Icon: FlaskConical, group: "secondary", mobileHidden: true },
+  { href: "/billing", tkey: "nav.billing", label: "Billing", Icon: CreditCard, group: "secondary", mobileHidden: true, ownerOnly: true },
+  { href: "/settings", tkey: "nav.settings", label: "Settings", Icon: Settings, group: "secondary" },
 ];
 
-const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/reset-password", "/verify-email"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/reset-password", "/verify-email", "/i/"];
+// Public marketing pages — rendered bare (own header/footer), no auth, allowed to scroll.
+const MARKETING_PATHS = ["/pricing", "/about", "/privacy", "/terms"];
 
-/**
- * Auth-aware shell. Public pages render bare; app pages get the nav and a
- * session guard (→ /login when unauthenticated, → /onboarding until complete).
- */
 export function NavShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -32,7 +58,8 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [checked, setChecked] = useState(false);
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  const isMarketing = pathname === "/" || MARKETING_PATHS.some((p) => pathname === p);
+  const isPublic = isMarketing || PUBLIC_PATHS.some((p) => pathname.startsWith(p));
   const isOnboarding = pathname.startsWith("/onboarding");
 
   useEffect(() => {
@@ -52,12 +79,14 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         if (err instanceof AuthError) router.replace("/login");
         else setChecked(true);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+  if (isMarketing) return <>{children}</>;
   if (isPublic || isOnboarding) return <div className="h-dvh">{children}</div>;
   if (!checked) {
-    return <div className="flex h-dvh items-center justify-center text-sm text-muted">Loading…</div>;
+    return (
+      <div className="flex h-dvh items-center justify-center text-sm text-muted">Loading…</div>
+    );
   }
 
   const logout = async () => {
@@ -65,48 +94,55 @@ export function NavShell({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   };
 
+  const visible = TABS.filter((tab) => !tab.ownerOnly || me?.role === "owner");
+  const mainTabs = visible.filter((tab) => tab.group === "main");
+  const secondaryTabs = visible.filter((tab) => tab.group === "secondary");
+
+  const NavLink = ({ tab }: { tab: Tab }) => {
+    const active = pathname.startsWith(tab.href);
+    return (
+      <Link
+        href={tab.href}
+        aria-current={active ? "page" : undefined}
+        className={`group relative flex items-center gap-3 rounded-card px-3 py-2 text-sm font-medium ${
+          active ? "bg-primary-soft text-primary-700" : "text-muted hover:bg-canvas hover:text-ink"
+        }`}
+      >
+        {active && (
+          <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary-600" />
+        )}
+        <NavIcon Icon={tab.Icon} active={active} />
+        {t(tab.tkey)}
+      </Link>
+    );
+  };
+
   return (
     <div className="flex h-dvh flex-col md:flex-row">
       {/* Desktop rail */}
-      <nav className="hidden w-48 shrink-0 flex-col border-r border-line bg-white md:flex">
+      <nav className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface md:flex">
         <div className="px-4 py-5">
-          <span className="text-lg font-semibold text-primary-dark">Azayon</span>
-          {me && <p className="mt-0.5 truncate text-xs text-muted">{me.tenant.name}</p>}
+          <Logo />
+          {me && <p className="mt-2 truncate text-xs text-muted">{me.tenant.name}</p>}
         </div>
-        <div className="flex flex-1 flex-col gap-1 px-2">
-          {TABS.filter((tab) => !tab.ownerOnly || me?.role === "owner").map((tab) => {
-            const active = pathname.startsWith(tab.href);
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={`rounded-card px-3 py-2 text-sm font-medium ${
-                  active ? "bg-primary-soft text-primary-dark" : "text-muted hover:bg-canvas"
-                }`}
-              >
-                <span className="mr-2">{tab.icon}</span>
-                {t(tab.tkey)}
-              </Link>
-            );
-          })}
-        </div>
-        <div className="mx-2 mb-2 flex gap-1 text-xs">
-          {(["en", "sw"] as const).map((l) => (
-            <button
-              key={l}
-              onClick={() => setLocale(l)}
-              className={`flex-1 rounded-card px-2 py-1 font-medium ${
-                locale === l ? "bg-primary-soft text-primary-dark" : "text-muted hover:bg-canvas"
-              }`}
-            >
-              {l === "en" ? "English" : "Kiswahili"}
-            </button>
+
+        <div className="flex flex-1 flex-col gap-0.5 px-3">
+          {mainTabs.map((tab) => (
+            <NavLink key={tab.href} tab={tab} />
+          ))}
+
+          <div className="my-2 border-t border-line" />
+
+          {secondaryTabs.map((tab) => (
+            <NavLink key={tab.href} tab={tab} />
           ))}
         </div>
+
         <button
           onClick={() => void logout()}
-          className="mx-2 mb-4 rounded-card px-3 py-2 text-left text-sm text-muted hover:bg-canvas"
+          className="mx-3 mb-4 flex items-center gap-3 rounded-card px-3 py-2 text-left text-sm font-medium text-muted hover:bg-canvas hover:text-ink"
         >
+          <LogOut className="size-[18px] shrink-0" strokeWidth={2} />
           {t("nav.logout")}
         </button>
       </nav>
@@ -118,24 +154,50 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile bottom nav — five tabs max; the rest live on desktop */}
-      <nav className="flex shrink-0 border-t border-line bg-white md:hidden">
-        {TABS.filter((tab) => !tab.mobileHidden && (!tab.ownerOnly || me?.role === "owner")).map((tab) => {
-          const active = pathname.startsWith(tab.href);
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium ${
-                active ? "text-primary-dark" : "text-muted"
-              }`}
-            >
-              <span className="text-base leading-none">{tab.icon}</span>
-              {t(tab.tkey)}
-            </Link>
-          );
-        })}
+      <nav className="flex shrink-0 border-t border-line bg-surface md:hidden">
+        {visible
+          .filter((tab) => !tab.mobileHidden)
+          .map((tab) => {
+            const active = pathname.startsWith(tab.href);
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                aria-current={active ? "page" : undefined}
+                className={`flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium ${
+                  active ? "text-primary-700" : "text-muted"
+                }`}
+              >
+                <NavIcon Icon={tab.Icon} active={active} size="size-5" inherit />
+                {t(tab.tkey)}
+              </Link>
+            );
+          })}
       </nav>
     </div>
+  );
+}
+
+/** Nav icon that flips to a spinner while its link's navigation is pending. */
+function NavIcon({
+  Icon,
+  active,
+  size = "size-[18px]",
+  inherit = false,
+}: {
+  Icon: LucideIcon;
+  active: boolean;
+  size?: string;
+  inherit?: boolean;
+}) {
+  const { pending } = useLinkStatus();
+  if (pending) return <Loader2 className={`${size} shrink-0 animate-spin`} />;
+  if (inherit) return <Icon className={`${size} shrink-0`} strokeWidth={active ? 2.25 : 2} />;
+  return (
+    <Icon
+      className={`${size} shrink-0 ${active ? "text-primary-600" : "text-muted group-hover:text-ink"}`}
+      strokeWidth={active ? 2.25 : 2}
+    />
   );
 }
 
@@ -144,17 +206,20 @@ function BillingBanner({ state, isOwner }: { state?: string; isOwner: boolean })
   const readonly = state === "readonly";
   return (
     <div
-      className={`flex items-center justify-between gap-3 border-b px-4 py-2 text-xs ${
-        readonly ? "border-red-200 bg-red-50 text-danger" : "border-amber-200 bg-amber-50 text-warning"
+      className={`flex items-center justify-between gap-3 border-b px-4 py-2.5 text-xs ${
+        readonly
+          ? "border-danger/20 bg-danger-soft text-danger"
+          : "border-warning/20 bg-warning-soft text-warning"
       }`}
     >
-      <span>
+      <span className="flex items-center gap-2">
+        <AlertTriangle className="size-4 shrink-0" />
         {readonly
           ? "Your subscription is inactive — the app is read-only and your AI has paused."
           : "You've reached your plan's conversation limit — new conversations are paused."}
       </span>
       {isOwner && (
-        <Link href="/billing" className="shrink-0 font-medium underline">
+        <Link href="/billing" className="shrink-0 font-semibold underline underline-offset-2">
           {readonly ? "Subscribe" : "Upgrade"}
         </Link>
       )}
@@ -165,11 +230,14 @@ function BillingBanner({ state, isOwner }: { state?: string; isOwner: boolean })
 function VerifyBanner() {
   const [state, setState] = useState<"idle" | "sent">("idle");
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-warning">
-      <span>Verify your email to secure your account — check your inbox for the link.</span>
+    <div className="flex items-center justify-between gap-3 border-b border-warning/20 bg-warning-soft px-4 py-2.5 text-xs text-warning">
+      <span className="flex items-center gap-2">
+        <MailWarning className="size-4 shrink-0" />
+        Verify your email to secure your account — check your inbox for the link.
+      </span>
       <button
         onClick={() => void api.resendVerification().then(() => setState("sent")).catch(() => {})}
-        className="shrink-0 font-medium underline disabled:opacity-50"
+        className="shrink-0 font-semibold underline underline-offset-2 disabled:opacity-50"
         disabled={state === "sent"}
       >
         {state === "sent" ? "Sent ✓" : "Resend"}

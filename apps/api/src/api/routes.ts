@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { Contact, Message } from "@prisma/client";
+import type { Contact, Message, Invoice, InvoiceItem, Tenant } from "@prisma/client";
 import { db } from "../db.js";
 import { publish, subscribe } from "../events.js";
 import { requireAuth, requireOwner } from "../auth/auth.js";
@@ -16,7 +16,15 @@ import {
 } from "../whatsapp/templates.js";
 import { parseFollowUpConfig } from "../followups.js";
 import { parseBookingConfig, type BookingConfig } from "../booking.js";
-import { verifyPaystackKey, approveInvoice, PaystackError } from "../paystack.js";
+import { draftBusinessDescription } from "../agent/draft.js";
+import {
+  verifyPaystackKey,
+  approveInvoice,
+  createInvoice,
+  PaystackError,
+  type InvoiceItemInput,
+} from "../paystack.js";
+import { config } from "../config.js";
 import { ingestDoc, KbError } from "../kb.js";
 import { billingStatus, canSend } from "../billing.js";
 import { audit } from "../audit.js";
@@ -46,6 +54,41 @@ const serializeContact = (c: Contact) => ({
   windowOpen: windowIsOpen(c),
   lastInboundAt: c.lastInboundAt,
   createdAt: c.createdAt,
+});
+
+// Human invoice number rendered as INV-0042.
+const invoiceRef = (number: number) => `INV-${String(number).padStart(4, "0")}`;
+
+type InvoiceWithRelations = Invoice & {
+  items: InvoiceItem[];
+  contact: Pick<Contact, "id" | "name" | "phone">;
+};
+
+const serializeInvoice = (inv: InvoiceWithRelations) => ({
+  id: inv.id,
+  number: inv.number,
+  ref: invoiceRef(inv.number),
+  amountKes: inv.amountCents / 100,
+  taxRate: inv.taxRate,
+  taxKes: inv.taxCents / 100,
+  currency: inv.currency,
+  description: inv.description,
+  notes: inv.notes,
+  status: inv.status,
+  payUrl: inv.payUrl,
+  publicUrl: `${config.APP_BASE_URL}/i/${inv.publicToken}`,
+  dueDate: inv.dueDate,
+  issuedAt: inv.issuedAt,
+  paidAt: inv.paidAt,
+  createdAt: inv.createdAt,
+  contact: { id: inv.contact.id, name: inv.contact.name, phone: inv.contact.phone },
+  items: inv.items.map((i) => ({
+    id: i.id,
+    description: i.description,
+    quantity: i.quantity,
+    unitKes: i.unitCents / 100,
+    lineKes: (i.quantity * i.unitCents) / 100,
+  })),
 });
 
 const serializeMessage = (m: Message) => ({
@@ -92,7 +135,66 @@ export function registerApiRoutes(
       billing: await billingStatus(auth.tenant),
       role: auth.user.role,
       googleConnected: calendarConnected(auth.tenant),
+      branding: {
+        logoUrl: auth.tenant.logoUrl,
+        businessPhone: auth.tenant.businessPhone,
+        businessEmail: auth.tenant.businessEmail,
+        payInstructions: auth.tenant.payInstructions,
+      },
     };
+  });
+
+  // Invoice branding shown on the public hosted invoice page.
+  app.put("/api/tenant/branding", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    const body = req.body as {
+      logoUrl?: string | null;
+      businessPhone?: string | null;
+      businessEmail?: string | null;
+      payInstructions?: string | null;
+    };
+    const clean = (v: string | null | undefined, max: number) => {
+      const s = (v ?? "").trim();
+      return s ? s.slice(0, max) : null;
+    };
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: {
+        // Large cap: logoUrl may be a base64 data: URL from the upload endpoint,
+        // not just a pasted http(s) URL.
+        logoUrl: clean(body.logoUrl, 1_500_000),
+        businessPhone: clean(body.businessPhone, 40),
+        businessEmail: clean(body.businessEmail, 120),
+        payInstructions: clean(body.payInstructions, 500),
+      },
+    });
+    return { ok: true };
+  });
+
+  // Logo upload — stored inline as a base64 data: URL on the tenant (no object
+  // storage configured; logos are small). Returns the URL for the form to preview.
+  app.post("/api/tenant/logo", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    const file = await req.file();
+    if (!file) return reply.code(400).send({ error: "A file is required." });
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype)) {
+      return reply.code(400).send({ error: "Use a PNG, JPG, WEBP or GIF image." });
+    }
+    let buf: Buffer;
+    try {
+      buf = await file.toBuffer();
+    } catch {
+      // @fastify/multipart throws once the 2MB part limit is exceeded.
+      return reply.code(400).send({ error: "Image is too large." });
+    }
+    if (buf.length > 512 * 1024) {
+      return reply.code(400).send({ error: "Logo must be under 512KB." });
+    }
+    const logoUrl = `data:${file.mimetype};base64,${buf.toString("base64")}`;
+    await db.tenant.update({ where: { id: auth.tenant.id }, data: { logoUrl } });
+    return { logoUrl };
   });
 
   // Compliance guardrails: per-lead daily message cap + data-retention window.
@@ -266,6 +368,24 @@ export function registerApiRoutes(
       },
     });
     return { ok: true };
+  });
+
+  // Draft (or polish) the business description with the AI — powers the
+  // "Draft with AI" button in the guided profile builder.
+  app.post("/api/tenant/profile/draft", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { seed } = (req.body ?? {}) as { seed?: string };
+    try {
+      const description = await draftBusinessDescription({
+        tenantId: auth.tenant.id,
+        businessName: auth.tenant.name,
+        seed,
+      });
+      return { description };
+    } catch (err) {
+      return reply.code(503).send({ error: (err as Error).message || "Couldn't draft right now." });
+    }
   });
 
   // Auto no-reply follow-up sequence configuration.
@@ -791,6 +911,245 @@ export function registerApiRoutes(
     );
     publish({ type: "contact_updated", tenantId: auth.tenant.id, contactId: id });
     return { ok: true, delivered: false, payUrl: approved.payUrl };
+  });
+
+  // ---- Invoices (proper line-item documents) -------------------------------
+  // The contact-scoped /approve route above handles the AI-proposed flow. These
+  // routes cover owner-created invoices and the shared lifecycle (list/send/cancel)
+  // plus the public hosted document.
+
+  const invoiceInclude = {
+    items: true,
+    contact: { select: { id: true, name: true, phone: true } },
+  } as const;
+
+  // Sends the hosted invoice link to the customer over WhatsApp when the 24h
+  // window is open; otherwise leaves a timeline note for the owner to send the
+  // link manually. Flips a draft to "pending" (issued) and stamps issuedAt.
+  async function issueInvoice(tenant: Tenant, contact: Contact, invoice: Invoice, userId: string) {
+    const ref = invoiceRef(invoice.number);
+    const publicUrl = `${config.APP_BASE_URL}/i/${invoice.publicToken}`;
+    const amountKes = invoice.amountCents / 100;
+    const text =
+      `Invoice ${ref} from ${tenant.name}: KES ${amountKes.toLocaleString()} — ${invoice.description}. ` +
+      `View${invoice.payUrl ? " and pay" : ""} here: ${publicUrl}`;
+
+    // Issue once: draft -> pending, stamp issuedAt. Re-sends keep both stable.
+    if (invoice.status === "draft" || !invoice.issuedAt) {
+      await db.invoice.update({
+        where: { id: invoice.id },
+        data: {
+          status: invoice.status === "draft" ? "pending" : invoice.status,
+          issuedAt: invoice.issuedAt ?? new Date(),
+        },
+      });
+    }
+
+    if (windowIsOpen(contact)) {
+      try {
+        const waMessageId = await sender.sendText(tenant, contact, text);
+        await db.message.create({
+          data: {
+            tenantId: tenant.id,
+            contactId: contact.id,
+            direction: "out",
+            author: "human",
+            text,
+            waMessageId,
+            status: waMessageId ? "sent" : null,
+          },
+        });
+        await audit(tenant.id, userId, "invoice.send", `${contact.phone} — ${ref} KES ${amountKes.toLocaleString()}`);
+        publish({ type: "message", tenantId: tenant.id, contactId: contact.id });
+        publish({ type: "contact_updated", tenantId: tenant.id, contactId: contact.id });
+        return { delivered: true, publicUrl };
+      } catch (err) {
+        if (!(err instanceof WindowClosedError)) throw err;
+        // Window closed between check and send — fall through to handoff note.
+      }
+    }
+
+    await db.message.create({
+      data: {
+        tenantId: tenant.id,
+        contactId: contact.id,
+        direction: "out",
+        author: "system",
+        kind: "event",
+        text: `Invoice ${ref} ready (KES ${amountKes.toLocaleString()}) — 24h window closed, send the link manually: ${publicUrl}`,
+      },
+    });
+    await audit(tenant.id, userId, "invoice.send", `${contact.phone} — ${ref} (window closed, not sent)`);
+    publish({ type: "contact_updated", tenantId: tenant.id, contactId: contact.id });
+    return { delivered: false, publicUrl };
+  }
+
+  // List all invoices for the back-office tab. Agents may view; only owners
+  // create/send/cancel (gated below). Optional ?status= filter.
+  app.get("/api/invoices", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { status } = req.query as { status?: string };
+    const invoices = await db.invoice.findMany({
+      where: { tenantId: auth.tenant.id, ...(status ? { status } : {}) },
+      include: invoiceInclude,
+      orderBy: { createdAt: "desc" },
+    });
+    return invoices.map(serializeInvoice);
+  });
+
+  // Create a line-item invoice. Any team member may invoice (like the inbox
+  // approve flow) — invoices touch the customer chat, not Azayon billing.
+  // Optionally mints a Paystack pay link and sends it immediately (send=true).
+  app.post("/api/invoices", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const body = req.body as {
+      contactId?: string;
+      items?: Array<{ description?: string; quantity?: number; unitKes?: number }>;
+      description?: string;
+      notes?: string;
+      dueDate?: string;
+      taxRate?: number;
+      withPayLink?: boolean;
+      send?: boolean;
+    };
+    if (!body.contactId) return reply.code(400).send({ error: "contactId is required" });
+    const contact = await db.contact.findFirst({
+      where: { id: body.contactId, tenantId: auth.tenant.id },
+    });
+    if (!contact) return reply.code(404).send({ error: "Contact not found" });
+    if (body.send && contact.optedOut) {
+      return reply.code(409).send({ error: "Contact has opted out — can't send." });
+    }
+
+    const items: InvoiceItemInput[] = (body.items ?? [])
+      .map((i) => ({
+        description: String(i.description ?? "").trim(),
+        quantity: Math.round(Number(i.quantity ?? 1)),
+        unitCents: Math.round(Number(i.unitKes ?? 0) * 100),
+      }))
+      .filter((i) => i.description && i.quantity > 0 && i.unitCents > 0);
+    if (items.length === 0) {
+      return reply.code(400).send({ error: "Add at least one line item with a description and amount." });
+    }
+    if (body.withPayLink && !auth.tenant.paystackSecretKey) {
+      return reply.code(400).send({ error: "Connect Paystack before attaching a payment link." });
+    }
+
+    try {
+      const created = await createInvoice(auth.tenant, contact, {
+        items,
+        description: body.description,
+        notes: body.notes,
+        dueDate: body.dueDate ? new Date(body.dueDate) : null,
+        taxRate: Number(body.taxRate) || 0,
+        withPayLink: Boolean(body.withPayLink),
+      });
+      const invoice = await db.invoice.findUniqueOrThrow({ where: { id: created.invoiceId } });
+      await audit(
+        auth.tenant.id,
+        auth.user.id,
+        "invoice.create",
+        `${contact.phone} — ${invoiceRef(invoice.number)} KES ${(invoice.amountCents / 100).toLocaleString()}`,
+      );
+      if (body.send) await issueInvoice(auth.tenant, contact, invoice, auth.user.id);
+      const full = await db.invoice.findUniqueOrThrow({
+        where: { id: created.invoiceId },
+        include: invoiceInclude,
+      });
+      return reply.code(201).send(serializeInvoice(full));
+    } catch (err) {
+      if (err instanceof PaystackError) return reply.code(400).send({ error: err.message });
+      throw err;
+    }
+  });
+
+  // Send (or re-send) an issued invoice's hosted link to the customer.
+  app.post("/api/invoices/:id/send", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { id } = req.params as { id: string };
+    const invoice = await db.invoice.findFirst({
+      where: { id, tenantId: auth.tenant.id },
+      include: { contact: true },
+    });
+    if (!invoice) return reply.code(404).send({ error: "not found" });
+    if (invoice.status === "paid" || invoice.status === "cancelled") {
+      return reply.code(409).send({ error: `Invoice is already ${invoice.status}.` });
+    }
+    if (invoice.contact.optedOut) return reply.code(409).send({ error: "Contact has opted out." });
+    const result = await issueInvoice(auth.tenant, invoice.contact, invoice, auth.user.id);
+    const full = await db.invoice.findUniqueOrThrow({ where: { id }, include: invoiceInclude });
+    return { ok: true, ...result, invoice: serializeInvoice(full) };
+  });
+
+  // Cancel an unpaid invoice.
+  app.post("/api/invoices/:id/cancel", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { id } = req.params as { id: string };
+    const invoice = await db.invoice.findFirst({ where: { id, tenantId: auth.tenant.id } });
+    if (!invoice) return reply.code(404).send({ error: "not found" });
+    if (invoice.status === "paid") {
+      return reply.code(409).send({ error: "Paid invoices can't be cancelled." });
+    }
+    await db.invoice.update({ where: { id }, data: { status: "cancelled" } });
+    await audit(auth.tenant.id, auth.user.id, "invoice.cancel", invoiceRef(invoice.number));
+    return { ok: true };
+  });
+
+  // Public hosted invoice document. No auth — the unguessable token is the
+  // capability. The web app's /i/<token> page renders this. AI-proposed invoices
+  // (pending_approval) aren't yet real and stay hidden until an owner sends them.
+  app.get("/api/public/invoices/:token", async (req, reply) => {
+    const { token } = req.params as { token: string };
+    const invoice = await db.invoice.findUnique({
+      where: { publicToken: token },
+      include: {
+        items: true,
+        tenant: {
+          select: {
+            name: true,
+            logoUrl: true,
+            businessPhone: true,
+            businessEmail: true,
+            payInstructions: true,
+          },
+        },
+        contact: { select: { name: true, phone: true } },
+      },
+    });
+    if (!invoice || invoice.status === "pending_approval") {
+      return reply.code(404).send({ error: "Invoice not found" });
+    }
+    return {
+      ref: invoiceRef(invoice.number),
+      business: invoice.tenant.name,
+      logoUrl: invoice.tenant.logoUrl,
+      businessPhone: invoice.tenant.businessPhone,
+      businessEmail: invoice.tenant.businessEmail,
+      // Offline payment instructions only matter when there's no online pay link.
+      payInstructions: invoice.payUrl ? null : invoice.tenant.payInstructions,
+      customer: invoice.contact.name ?? invoice.contact.phone,
+      amountKes: invoice.amountCents / 100,
+      taxRate: invoice.taxRate,
+      taxKes: invoice.taxCents / 100,
+      currency: invoice.currency,
+      description: invoice.description,
+      notes: invoice.notes,
+      status: invoice.status,
+      payUrl: invoice.payUrl,
+      dueDate: invoice.dueDate,
+      issuedAt: invoice.issuedAt,
+      paidAt: invoice.paidAt,
+      items: invoice.items.map((i) => ({
+        description: i.description,
+        quantity: i.quantity,
+        unitKes: i.unitCents / 100,
+        lineKes: (i.quantity * i.unitCents) / 100,
+      })),
+    };
   });
 
   // The light switch: AI on/off per conversation.

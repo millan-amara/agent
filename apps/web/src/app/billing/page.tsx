@@ -1,22 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import { api, type BillingStatus, type PlanOption } from "@/lib/api";
+import { Card } from "@/components/ui/Card";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 function fmtKes(n: number) {
   return "KES " + n.toLocaleString();
 }
 
-function StateBadge({ s }: { s: BillingStatus["state"] }) {
-  const map: Record<BillingStatus["state"], { label: string; cls: string }> = {
-    trial: { label: "Free trial", cls: "bg-primary-soft text-primary-dark" },
-    active: { label: "Active", cls: "bg-green-50 text-success" },
-    over_limit: { label: "Over plan limit", cls: "bg-amber-50 text-warning" },
-    readonly: { label: "Inactive — read only", cls: "bg-red-50 text-danger" },
-  };
-  const m = map[s];
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${m.cls}`}>{m.label}</span>;
-}
+const STATE_BADGE: Record<BillingStatus["state"], { label: string; tone: BadgeTone }> = {
+  trial: { label: "Free trial", tone: "primary" },
+  active: { label: "Active", tone: "success" },
+  over_limit: { label: "Over plan limit", tone: "attention" },
+  readonly: { label: "Inactive — read only", tone: "danger" },
+};
 
 export default function BillingPage() {
   const [status, setStatus] = useState<BillingStatus | null>(null);
@@ -59,17 +60,23 @@ export default function BillingPage() {
     status.limit && status.limit > 0
       ? Math.min(100, Math.round((status.conversationCount / status.limit) * 100))
       : 0;
+  const badge = STATE_BADGE[status.state];
 
   return (
-    <div className="mx-auto h-full w-full max-w-3xl space-y-4 overflow-y-auto p-4 md:p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Billing</h1>
-        <StateBadge s={status.state} />
-      </div>
+    <div className="mx-auto h-full w-full max-w-3xl space-y-5 overflow-y-auto p-4 md:p-8">
+      <PageHeader
+        title="Billing"
+        className="mb-0"
+        actions={
+          <Badge tone={badge.tone} size="md">
+            {badge.label}
+          </Badge>
+        }
+      />
 
-      {error && <p className="rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{error}</p>}
+      {error && <p className="rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
 
-      <section className="rounded-card border border-line bg-white p-5">
+      <Card className="p-5">
         <div className="flex items-baseline justify-between">
           <h2 className="font-semibold">
             {status.planTier
@@ -87,8 +94,8 @@ export default function BillingPage() {
             </span>
           )}
         </div>
-        <div className="mt-3">
-          <div className="mb-1 flex justify-between text-xs text-muted">
+        <div className="mt-4">
+          <div className="mb-1.5 flex justify-between text-xs text-muted">
             <span>Conversations this month</span>
             <span className="tnum">
               {status.conversationCount}
@@ -98,7 +105,7 @@ export default function BillingPage() {
           {status.limit ? (
             <div className="h-2 w-full overflow-hidden rounded-full bg-canvas">
               <div
-                className={`h-full ${pct >= 100 ? "bg-warning" : "bg-primary"}`}
+                className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-attention" : "bg-primary-600"}`}
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -107,17 +114,17 @@ export default function BillingPage() {
           )}
         </div>
         {status.state === "readonly" && (
-          <p className="mt-3 rounded-card bg-red-50 px-3 py-2 text-xs text-danger">
+          <p className="mt-4 rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">
             Your account is read-only. Subscribe below to start sending and let your AI reply again.
           </p>
         )}
         {status.state === "over_limit" && (
-          <p className="mt-3 rounded-card bg-amber-50 px-3 py-2 text-xs text-warning">
+          <p className="mt-4 rounded-card bg-warning-soft px-3 py-2 text-xs text-warning">
             You&apos;ve hit your plan&apos;s conversation limit — new conversations are paused until
             next month or an upgrade. Existing chats keep working.
           </p>
         )}
-      </section>
+      </Card>
 
       {!checkoutEnabled && (
         <p className="rounded-card border border-line bg-canvas px-3 py-2 text-xs text-muted">
@@ -127,31 +134,44 @@ export default function BillingPage() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-3">
-        {plans.map((p) => {
+        {plans.map((p, i) => {
           const current = status.planTier === p.tier && status.state !== "readonly";
+          const popular = i === 1;
           return (
-            <div
+            <Card
               key={p.tier}
-              className={`rounded-card border bg-white p-4 ${
-                current ? "border-primary" : "border-line"
-              }`}
+              className={`relative flex flex-col p-4 ${current || popular ? "ring-1 ring-primary/40" : ""}`}
             >
+              {popular && !current && (
+                <span className="absolute -top-2 right-3">
+                  <Badge tone="primary">Most popular</Badge>
+                </span>
+              )}
               <h3 className="font-semibold">{p.name}</h3>
-              <p className="mt-1 text-xl font-semibold tnum">
+              <p className="tnum mt-1 text-xl font-semibold">
                 {fmtKes(p.priceKes)}
                 <span className="text-sm font-normal text-muted">/mo</span>
               </p>
               <p className="mt-1 text-xs text-muted">
                 Up to {p.convLimit.toLocaleString()} conversations/month
               </p>
-              <button
+              <Button
+                variant={current ? "secondary" : "primary"}
                 disabled={!checkoutEnabled || !p.available || busy !== null || current}
                 onClick={() => void subscribe(p.tier)}
-                className="mt-3 w-full rounded-card bg-primary-dark py-2 text-sm font-semibold text-white disabled:opacity-40"
+                className="mt-3 w-full"
               >
-                {current ? "Current plan" : busy === p.tier ? "Redirecting…" : "Choose"}
-              </button>
-            </div>
+                {current ? (
+                  <>
+                    <Check className="size-4" /> Current plan
+                  </>
+                ) : busy === p.tier ? (
+                  "Redirecting…"
+                ) : (
+                  "Choose"
+                )}
+              </Button>
+            </Card>
           );
         })}
       </div>

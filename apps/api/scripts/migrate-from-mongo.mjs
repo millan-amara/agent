@@ -161,7 +161,7 @@ for (const u of users) {
 const knownUserIds = new Set(userRecords.map((u) => u.id));
 
 // --- Build contact records ---
-const contactRecords = [];
+const rawContacts = [];
 for (const c of contacts) {
   const tenantId = tid(c.orgId);
   if (!stageOrderByTenant.has(tenantId)) { report.skipped.push(`contact ${c._id}: org ${c.orgId} not found`); continue; }
@@ -192,8 +192,7 @@ for (const c of contacts) {
 
   const assignedUserId = c.assignedTo && knownUserIds.has(uid(c.assignedTo)) ? uid(c.assignedTo) : null;
 
-  report.contacts++;
-  contactRecords.push({
+  rawContacts.push({
     id: cid(c._id),
     tenantId,
     name: `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "Unknown",
@@ -216,12 +215,32 @@ for (const c of contacts) {
   });
 }
 
+// Dedupe by (tenantId, phone): the new model is one contact per phone per tenant
+// (the DB enforces @@unique([tenantId, phone])). The legacy CRM has duplicate
+// entries of the same person — merge them: sum value, keep the most-advanced
+// stage, keep the richest name/assignee, and the earliest createdAt.
+const byPhone = new Map();
+for (const c of rawContacts) {
+  const key = `${c.tenantId}|${c.phone}`;
+  const existing = byPhone.get(key);
+  if (!existing) { byPhone.set(key, c); continue; }
+  report.mergedDupes = (report.mergedDupes ?? 0) + 1;
+  existing.valueCents += c.valueCents;
+  const order = stageOrderByTenant.get(c.tenantId) ?? [];
+  if (order.indexOf(c.stage) > order.indexOf(existing.stage)) existing.stage = c.stage;
+  if (!existing.name || existing.name === "Unknown") existing.name = c.name;
+  existing.assignedUserId = existing.assignedUserId ?? c.assignedUserId;
+  if (c.createdAt && (!existing.createdAt || c.createdAt < existing.createdAt)) existing.createdAt = c.createdAt;
+}
+const contactRecords = [...byPhone.values()];
+report.contacts = contactRecords.length;
+
 // --- Report ---
 function printReport() {
   console.log(`\n=== Migration ${DRY_RUN ? "DRY-RUN (no writes)" : "RUN"} ===`);
   console.log(`Tenants:  ${report.tenants}` + (report.recovered ? `  (${report.recovered} recovered from orphaned contacts)` : ""));
   console.log(`Users:    ${report.users.owner} owner + ${report.users.agent} agent = ${report.users.owner + report.users.agent}`);
-  console.log(`Contacts: ${report.contacts}  (${report.phonePlaceholders} without a phone → placeholder)`);
+  console.log(`Contacts: ${report.contacts}  (${report.phonePlaceholders} without a phone → placeholder` + (report.mergedDupes ? `; ${report.mergedDupes} duplicate-phone rows merged` : "") + `)`);
   console.log(`Deals folded into contacts: ${report.dealsFolded}; total open value migrated: KES ${(report.valueCentsTotal / 100).toLocaleString()}`);
   if (report.multiDeal.length) {
     console.log(`\nContacts with >1 deal (merged — eyeball these):`);

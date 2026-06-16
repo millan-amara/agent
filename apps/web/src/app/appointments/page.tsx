@@ -1,8 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { CalendarClock } from "lucide-react";
 import { api, type Appointment } from "@/lib/api";
 import { useLive } from "@/lib/useLive";
+import { Card } from "@/components/ui/Card";
+import { Avatar } from "@/components/ui/Avatar";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -22,18 +27,22 @@ export default function AppointmentsPage() {
   }
 
   return (
-    <div className="mx-auto h-full w-full max-w-4xl overflow-y-auto p-4 md:p-6">
-      <h1 className="mb-1 font-semibold">Appointments</h1>
-      <p className="mb-4 text-sm text-muted">
-        Booked by your AI (and your team). Reminders go out automatically the day before.
-      </p>
+    <div className="mx-auto h-full w-full max-w-3xl overflow-y-auto p-4 md:p-8">
+      <PageHeader
+        title="Appointments"
+        subtitle="Booked by your AI (and your team). Reminders go out automatically the day before."
+      />
       {upcoming.length === 0 ? (
-        <p className="rounded-card border border-line bg-white px-4 py-8 text-center text-sm text-muted">
-          Nothing booked yet. Enable booking in Settings, and the AI starts offering slots in chat.
-        </p>
+        <Card>
+          <EmptyState
+            icon={CalendarClock}
+            title="Nothing booked yet"
+            description="Enable booking in Settings, and the AI starts offering real slots in chat."
+          />
+        </Card>
       ) : (
         [...byDay.entries()].map(([day, appts]) => (
-          <section key={day} className="mb-4">
+          <section key={day} className="mb-5">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
               {new Date(day).toLocaleDateString("en-KE", {
                 weekday: "long",
@@ -43,17 +52,15 @@ export default function AppointmentsPage() {
             </h2>
             <ul className="space-y-2">
               {appts.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-3 rounded-card border border-line bg-white p-3"
-                >
-                  <div className="tnum w-16 shrink-0 text-sm font-semibold">
+                <Card key={a.id} className="flex items-center gap-3 p-3">
+                  <div className="tnum grid w-16 shrink-0 place-items-center rounded-card bg-primary-soft py-1.5 text-sm font-semibold text-primary-700">
                     {new Date(a.startsAt).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
                       hour12: false,
                     })}
                   </div>
+                  <Avatar name={a.contact.name} phone={a.contact.phone} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">
                       {a.contact.name ?? a.contact.phone}
@@ -62,11 +69,11 @@ export default function AppointmentsPage() {
                   </div>
                   <button
                     onClick={() => void api.cancelAppointment(a.id).then(refresh)}
-                    className="shrink-0 text-xs font-medium text-muted hover:text-danger"
+                    className="shrink-0 rounded-card px-2 py-1 text-xs font-medium text-muted hover:bg-danger-soft hover:text-danger"
                   >
                     Cancel
                   </button>
-                </li>
+                </Card>
               ))}
             </ul>
           </section>

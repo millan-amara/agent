@@ -1,8 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  ChevronLeft,
+  Send,
+  Bot,
+  Check,
+  CheckCheck,
+  AlertCircle,
+  Mic,
+  Image as ImageIcon,
+  Paperclip,
+  Lock,
+} from "lucide-react";
 import { api, type ContactDetail, type ApiMessage, type TeamMember } from "@/lib/api";
 import { StatePill } from "./StatePill";
+import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
 
 function displayName(c: { name: string | null; phone: string }) {
   return c.name ?? c.phone;
@@ -11,60 +25,71 @@ function displayName(c: { name: string | null; phone: string }) {
 function Bubble({ m }: { m: ApiMessage }) {
   if (m.kind === "event") {
     return (
-      <div className="my-1 flex justify-center">
-        <span className="rounded-full bg-canvas px-3 py-1 text-[11px] text-muted">{m.text}</span>
+      <div className="my-2 flex justify-center">
+        <span className="rounded-full bg-line/50 px-3 py-1 text-[11px] text-muted">{m.text}</span>
       </div>
     );
   }
   const inbound = m.direction === "in";
+  const human = !inbound && m.author === "human";
+  const ai = !inbound && m.author === "ai";
+
+  const MediaIcon = m.mediaType === "audio" ? Mic : m.mediaType === "image" ? ImageIcon : Paperclip;
   const mediaLabel =
     m.mediaType === "audio"
-      ? "🎤 Voice note"
+      ? "Voice note"
       : m.mediaType === "image"
-        ? "🖼️ Image"
+        ? "Image"
         : m.mediaType
-          ? "📎 Attachment"
+          ? "Attachment"
           : null;
-  // Outbound delivery state (only meaningful for real WhatsApp sends).
-  const tick =
-    m.status === "read"
-      ? "✓✓"
-      : m.status === "delivered"
-        ? "✓✓"
-        : m.status === "sent"
-          ? "✓"
-          : m.status === "failed"
-            ? "⚠ failed"
-            : "";
+
   return (
-    <div className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
+    <div className={`flex flex-col ${inbound ? "items-start" : "items-end"}`}>
       <div
-        className={`my-0.5 max-w-[80%] whitespace-pre-wrap rounded-card border px-3 py-2 text-sm ${
+        className={`max-w-[78%] whitespace-pre-wrap px-3.5 py-2 text-sm shadow-card ${
           inbound
-            ? "border-line bg-white"
-            : m.author === "human"
-              ? "border-primary-dark/20 bg-primary-dark text-white"
-              : "border-primary/20 bg-primary-soft"
+            ? "rounded-2xl rounded-bl-md bg-surface text-ink"
+            : human
+              ? "rounded-2xl rounded-br-md bg-primary-700 text-white"
+              : "rounded-2xl rounded-br-md bg-primary-soft text-ink"
         }`}
       >
         {mediaLabel && (
-          <div className="mb-0.5 text-[11px] font-medium opacity-70">{mediaLabel}</div>
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium opacity-70">
+            <MediaIcon className="size-3.5" />
+            {mediaLabel}
+          </div>
         )}
         {m.text}
-        <div
-          className={`mt-1 text-right text-[10px] ${
-            !inbound && m.author === "human" ? "text-white/60" : "text-muted"
-          }`}
-        >
-          {m.author === "ai" ? "AI · " : m.author === "human" ? "You · " : ""}
+      </div>
+      <div className="mt-0.5 flex items-center gap-1 px-1 text-[10px] text-muted">
+        {ai && (
+          <span className="inline-flex items-center gap-0.5 font-medium text-primary-700">
+            <Bot className="size-3" /> AI
+          </span>
+        )}
+        {human && <span className="font-medium">You</span>}
+        <span className="tnum">
           {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          {!inbound && tick && (
-            <span className={`ml-1 ${m.status === "read" ? "text-sky-400" : ""}`}>{tick}</span>
-          )}
-        </div>
+        </span>
+        {!inbound && <Tick status={m.status} />}
       </div>
     </div>
   );
+}
+
+function Tick({ status }: { status?: string | null }) {
+  if (status === "failed")
+    return (
+      <span className="inline-flex items-center gap-0.5 text-danger">
+        <AlertCircle className="size-3" /> failed
+      </span>
+    );
+  if (status === "read") return <CheckCheck className="size-3.5 text-sky-500" />;
+  if (status === "delivered") return <CheckCheck className="size-3.5" />;
+  if (status === "sent") return <Check className="size-3.5" />;
+  return null;
 }
 
 export function ChatPane({
@@ -125,14 +150,21 @@ export function ChatPane({
     }
   };
 
+  const disabled = detail.optedOut || !detail.windowOpen;
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas">
-      <header className="flex items-center gap-3 border-b border-line bg-white px-4 py-3">
+      <header className="flex items-center gap-3 border-b border-line bg-surface px-3 py-2.5 md:px-4">
         {onBack && (
-          <button onClick={onBack} className="text-muted md:hidden" aria-label="Back">
-            ←
+          <button
+            onClick={onBack}
+            className="-ml-1 rounded-card p-1 text-muted hover:bg-canvas hover:text-ink md:hidden"
+            aria-label="Back"
+          >
+            <ChevronLeft className="size-5" />
           </button>
         )}
+        <Avatar name={detail.name} phone={detail.phone} attention={detail.needsHuman} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="truncate font-semibold">{displayName(detail)}</span>
@@ -144,7 +176,7 @@ export function ChatPane({
           value={detail.assignedUserId ?? ""}
           onChange={(e) => void assign(e.target.value)}
           title="Assign conversation"
-          className="max-w-[8rem] rounded-card border border-line bg-white px-2 py-1.5 text-xs text-muted outline-none focus:border-primary"
+          className="hidden max-w-[8rem] rounded-card border border-line bg-surface px-2 py-1.5 text-xs text-muted outline-none focus:border-primary sm:block"
         >
           <option value="">Unassigned</option>
           {members.map((m) => (
@@ -154,37 +186,37 @@ export function ChatPane({
           ))}
         </select>
         {!detail.optedOut && (
-          <button
-            onClick={toggleAi}
-            className={`rounded-card border px-3 py-1.5 text-sm font-medium ${
-              detail.aiPaused
-                ? "border-primary bg-primary text-white"
-                : "border-line bg-white text-ink hover:bg-canvas"
-            }`}
-          >
+          <Button variant={detail.aiPaused ? "primary" : "secondary"} size="sm" onClick={toggleAi}>
             {detail.aiPaused ? "Resume AI" : "Take over"}
-          </button>
+          </Button>
         )}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-4 md:px-6">
         {detail.messages.map((m) => (
           <Bubble key={m.id} m={m} />
         ))}
         <div ref={bottomRef} />
       </div>
 
-      <footer className="border-t border-line bg-white p-3">
+      <footer className="border-t border-line bg-surface p-3 md:px-4">
         {!detail.windowOpen && !detail.optedOut && (
-          <div className="mb-2 rounded-card border border-line bg-canvas px-3 py-2 text-xs text-muted">
-            Use an approved template to message this customer — they last wrote more than 24 hours
-            ago. (Templates arrive in a later update.)
+          <div className="mb-2 flex items-start gap-2 rounded-card border border-line bg-canvas px-3 py-2 text-xs text-muted">
+            <Lock className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              This customer last wrote more than 24 hours ago — use an approved template to reach
+              them. (Templates arrive in a later update.)
+            </span>
           </div>
         )}
         {error && (
-          <div className="mb-2 rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{error}</div>
+          <div className="mb-2 rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">{error}</div>
         )}
-        <div className="flex items-end gap-2">
+        <div
+          className={`flex items-end gap-2 rounded-xl border bg-surface p-1.5 transition-colors focus-within:border-primary ${
+            disabled ? "border-line opacity-60" : "border-line"
+          }`}
+        >
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -196,17 +228,20 @@ export function ChatPane({
             }}
             rows={1}
             placeholder={
-              detail.optedOut ? "Customer has opted out" : "Reply as the business… (sending pauses the AI)"
+              detail.optedOut
+                ? "Customer has opted out"
+                : "Reply as the business… (sending pauses the AI)"
             }
-            disabled={detail.optedOut || !detail.windowOpen}
-            className="max-h-32 flex-1 resize-none rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary disabled:bg-canvas disabled:text-muted"
+            disabled={disabled}
+            className="max-h-32 flex-1 resize-none bg-transparent px-2.5 py-1.5 text-sm outline-none placeholder:text-muted/70 disabled:text-muted"
           />
           <button
             onClick={() => void send()}
-            disabled={sending || !draft.trim() || detail.optedOut || !detail.windowOpen}
-            className="rounded-card bg-primary-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            disabled={sending || !draft.trim() || disabled}
+            aria-label="Send"
+            className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary-700 text-white transition-colors hover:bg-primary-800 disabled:opacity-40"
           >
-            Send
+            <Send className="size-4" />
           </button>
         </div>
       </footer>

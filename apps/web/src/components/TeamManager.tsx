@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { api, type AuditEntry, type TeamMember } from "@/lib/api";
+import { Avatar } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Input, Select } from "@/components/ui/Field";
 
 export function TeamManager({ isOwner }: { isOwner: boolean }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -43,25 +48,26 @@ export function TeamManager({ isOwner }: { isOwner: boolean }) {
 
   return (
     <div className="space-y-5">
-      {msg && <p className="rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">{msg}</p>}
-      {error && <p className="rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{error}</p>}
+      {msg && <p className="rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-700">{msg}</p>}
+      {error && <p className="rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
 
-      <ul className="divide-y divide-line rounded-card border border-line">
+      <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
         {members.map((m) => (
-          <li key={m.id} className="flex items-center justify-between px-3 py-2 text-sm">
-            <div className="min-w-0">
+          <li key={m.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+            <Avatar name={m.name} phone={m.email} size="sm" />
+            <div className="min-w-0 flex-1">
               <div className="truncate font-medium">{m.name ?? m.email}</div>
-              <div className="text-xs text-muted">
-                {m.email} · {m.role}
-                {!m.emailVerified && " · invite pending"}
-              </div>
+              <div className="truncate text-xs text-muted">{m.email}</div>
             </div>
+            <Badge tone={m.role === "owner" ? "primary" : "neutral"}>{m.role}</Badge>
+            {!m.emailVerified && <Badge tone="attention">invite pending</Badge>}
             {isOwner && (
               <button
                 onClick={() => void remove(m.id)}
-                className="ml-3 shrink-0 text-xs text-danger hover:underline"
+                className="grid size-8 shrink-0 place-items-center rounded-card text-muted hover:bg-danger-soft hover:text-danger"
+                aria-label="Remove"
               >
-                Remove
+                <Trash2 className="size-4" />
               </button>
             )}
           </li>
@@ -72,28 +78,21 @@ export function TeamManager({ isOwner }: { isOwner: boolean }) {
         <form onSubmit={invite} className="flex flex-wrap items-end gap-2">
           <label className="text-sm">
             <span className="mb-1 block font-medium">Invite a teammate</span>
-            <input
+            <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@business.co.ke"
-              className="w-64 rounded-card border border-line px-3 py-2 outline-none focus:border-primary"
+              className="w-64"
             />
           </label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="rounded-card border border-line bg-white px-3 py-2 text-sm outline-none focus:border-primary"
-          >
+          <Select value={role} onChange={(e) => setRole(e.target.value)} className="w-auto">
             <option value="agent">Agent</option>
             <option value="owner">Owner</option>
-          </select>
-          <button
-            disabled={!email.trim()}
-            className="rounded-card bg-primary-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
+          </Select>
+          <Button type="submit" disabled={!email.trim()}>
             Send invite
-          </button>
+          </Button>
         </form>
       ) : (
         <p className="text-xs text-muted">Only the account owner can invite or remove teammates.</p>

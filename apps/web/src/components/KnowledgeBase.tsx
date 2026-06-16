@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FileText, Upload, Trash2 } from "lucide-react";
 import { api, type KbDoc } from "@/lib/api";
+import { Button } from "@/components/ui/Button";
+import { Input, Textarea } from "@/components/ui/Field";
 
 export function KnowledgeBase() {
   const [docs, setDocs] = useState<KbDoc[]>([]);
@@ -66,16 +69,17 @@ export function KnowledgeBase() {
         Upload docs and FAQs so the AI can answer from your own material — not just the profile
         form. It searches these when a question isn&apos;t covered by your instructions.
       </p>
-      {msg && (
-        <p className="rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-dark">{msg}</p>
-      )}
-      {error && <p className="rounded-card bg-red-50 px-3 py-2 text-xs text-danger">{error}</p>}
+      {msg && <p className="rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-700">{msg}</p>}
+      {error && <p className="rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
 
       {docs.length > 0 && (
-        <ul className="divide-y divide-line rounded-card border border-line">
+        <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">
           {docs.map((d) => (
-            <li key={d.id} className="flex items-center justify-between px-3 py-2 text-sm">
-              <div className="min-w-0">
+            <li key={d.id} className="flex items-center gap-3 px-3 py-2.5 text-sm">
+              <span className="grid size-8 shrink-0 place-items-center rounded-card bg-primary-soft text-primary-700">
+                <FileText className="size-4" />
+              </span>
+              <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{d.title}</div>
                 <div className="text-xs text-muted">
                   {d.chunks} chunks · {d.source}
@@ -83,9 +87,10 @@ export function KnowledgeBase() {
               </div>
               <button
                 onClick={() => void remove(d.id)}
-                className="ml-3 shrink-0 text-xs text-danger hover:underline"
+                className="grid size-8 shrink-0 place-items-center rounded-card text-muted hover:bg-danger-soft hover:text-danger"
+                aria-label="Remove"
               >
-                Remove
+                <Trash2 className="size-4" />
               </button>
             </li>
           ))}
@@ -93,29 +98,25 @@ export function KnowledgeBase() {
       )}
 
       <form onSubmit={addText} className="space-y-2">
-        <input
+        <Input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title (e.g. Pricing & packages)"
-          className="w-full rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary"
         />
-        <textarea
+        <Textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={5}
+          className="resize-y"
           placeholder="Paste FAQ answers, policies, product details…"
-          className="w-full resize-y rounded-card border border-line px-3 py-2 text-sm outline-none focus:border-primary"
         />
         <div className="flex items-center gap-3">
-          <button
-            disabled={busy || !title.trim() || !content.trim()}
-            className="rounded-card bg-primary-dark px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          >
+          <Button type="submit" disabled={busy || !title.trim() || !content.trim()}>
             {busy ? "Indexing…" : "Add to knowledge base"}
-          </button>
+          </Button>
           <span className="text-xs text-muted">or</span>
-          <label className="cursor-pointer rounded-card border border-line px-3 py-2 text-sm font-medium hover:bg-canvas">
-            Upload .txt / .md
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-card border border-line bg-surface px-4 py-2 text-sm font-medium hover:bg-canvas">
+            <Upload className="size-4" /> Upload .txt / .md
             <input
               ref={fileRef}
               type="file"

@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { MessagesSquare, ServerCrash } from "lucide-react";
 import { api, type Conversation, type ContactDetail, type TenantInfo, type TeamMember } from "@/lib/api";
 import { useLive } from "@/lib/useLive";
 import { ChatPane } from "@/components/ChatPane";
 import { LeadPanel } from "@/components/LeadPanel";
 import { StatePill } from "@/components/StatePill";
+import { Avatar } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function InboxPage() {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
@@ -58,75 +63,104 @@ export default function InboxPage() {
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted">
-        Can&apos;t reach the Azayon server ({error}). Is the API running on port 3001?
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted">
+        <ServerCrash className="size-8 text-muted/60" strokeWidth={1.75} />
+        <p>
+          Can&apos;t reach the Azayon server ({error}).
+          <br />
+          Is the API running on port 3001?
+        </p>
       </div>
     );
   }
+
+  const needYou = conversations?.filter((c) => c.needsHuman || c.needsReview).length ?? 0;
 
   return (
     <div className="flex h-full min-h-0">
       {/* Conversation list */}
       <aside
-        className={`w-full flex-col border-r border-line bg-white md:flex md:w-80 md:shrink-0 ${
+        className={`w-full flex-col border-r border-line bg-surface md:flex md:w-80 md:shrink-0 ${
           selectedId ? "hidden" : "flex"
         }`}
       >
-        <div className="border-b border-line px-4 py-3">
-          <h1 className="font-semibold">Conversations</h1>
-          {conversations && (
-            <p className="text-xs text-muted">
-              {conversations.length} total
-              {conversations.some((c) => c.needsHuman || c.needsReview) &&
-                ` · ${conversations.filter((c) => c.needsHuman || c.needsReview).length} need you`}
-            </p>
+        <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3.5">
+          <div>
+            <h1 className="font-semibold">Conversations</h1>
+            {conversations && (
+              <p className="text-xs text-muted">{conversations.length} total</p>
+            )}
+          </div>
+          {needYou > 0 && (
+            <Badge tone="attention" size="md">
+              {needYou} need you
+            </Badge>
           )}
         </div>
+
         <div className="min-h-0 flex-1 overflow-y-auto">
           {conversations === null ? (
-            <p className="p-4 text-sm text-muted">Loading…</p>
+            <ListSkeleton />
           ) : conversations.length === 0 ? (
-            <div className="p-6 text-center text-sm text-muted">
-              No conversations yet. Message your WhatsApp number and it will appear here live.
-            </div>
+            <EmptyState
+              icon={MessagesSquare}
+              title="No conversations yet"
+              description="Message your WhatsApp number and the chat will appear here live."
+            />
           ) : (
-            conversations.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelectedId(c.id)}
-                className={`flex w-full flex-col gap-0.5 border-b border-line px-4 py-3 text-left hover:bg-canvas ${
-                  selectedId === c.id ? "bg-primary-soft/50" : ""
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-medium">{c.name ?? c.phone}</span>
-                  <StatePill contact={c} />
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-muted">
-                    {c.lastMessage
-                      ? `${c.lastMessage.author === "customer" ? "" : c.lastMessage.author === "ai" ? "AI: " : "You: "}${c.lastMessage.text}`
-                      : "—"}
-                  </span>
-                  {c.lastMessage && (
-                    <span className="shrink-0 text-[10px] text-muted">
-                      {timeAgo(c.lastMessage.createdAt)}
-                    </span>
+            conversations.map((c) => {
+              const selected = selectedId === c.id;
+              const attention = c.needsHuman || c.needsReview;
+              const prefix =
+                c.lastMessage?.author === "customer"
+                  ? ""
+                  : c.lastMessage?.author === "ai"
+                    ? "AI: "
+                    : "You: ";
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedId(c.id)}
+                  className={`relative flex w-full gap-3 border-b border-line px-3 py-3 text-left transition-colors hover:bg-canvas ${
+                    selected ? "bg-primary-soft/50" : attention ? "bg-attentionSoft/30" : ""
+                  }`}
+                >
+                  {c.needsHuman && (
+                    <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-attention" />
                   )}
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-muted">{c.stage}</span>
-                  {memberLabel(c.assignedUserId) && (
-                    <span
-                      className="rounded-full bg-primary-soft px-1.5 py-0.5 text-[9px] font-semibold text-primary-dark"
-                      title="Assigned"
-                    >
-                      {memberLabel(c.assignedUserId)}
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))
+                  <Avatar name={c.name} phone={c.phone} attention={c.needsHuman} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-semibold text-ink">
+                        {c.name ?? c.phone}
+                      </span>
+                      {c.lastMessage && (
+                        <span className="tnum shrink-0 text-xs text-muted">
+                          {timeAgo(c.lastMessage.createdAt)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted">
+                      {c.lastMessage ? `${prefix}${c.lastMessage.text}` : "—"}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <StatePill contact={c} />
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate text-xs text-muted">{c.stage}</span>
+                        {memberLabel(c.assignedUserId) && (
+                          <span
+                            className="grid size-5 place-items-center rounded-full bg-primary-soft text-[10px] font-bold text-primary-700"
+                            title="Assigned"
+                          >
+                            {memberLabel(c.assignedUserId)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </aside>
@@ -136,14 +170,17 @@ export default function InboxPage() {
         {detail ? (
           <ChatPane detail={detail} onChanged={onChanged} onBack={() => setSelectedId(null)} />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-sm text-muted">
-            Select a conversation
+          <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-canvas text-center">
+            <div className="grid size-14 place-items-center rounded-full bg-line/50 text-muted">
+              <MessagesSquare className="size-7" strokeWidth={1.5} />
+            </div>
+            <p className="text-sm text-muted">Select a conversation to get started</p>
           </div>
         )}
       </section>
 
-      {/* Lead panel — desktop only; mobile gets it via the header later */}
-      <aside className="hidden w-72 shrink-0 border-l border-line lg:block">
+      {/* Lead panel — desktop only */}
+      <aside className="hidden w-72 shrink-0 border-l border-line bg-surface lg:block">
         {detail && tenant ? (
           <LeadPanel detail={detail} stages={tenant.stages} onChanged={onChanged} />
         ) : (
@@ -152,6 +189,22 @@ export default function InboxPage() {
           </div>
         )}
       </aside>
+    </div>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <div className="divide-y divide-line">
+      {Array.from({ length: 7 }).map((_, i) => (
+        <div key={i} className="flex gap-3 px-3 py-3">
+          <Skeleton className="size-9 rounded-full" />
+          <div className="flex-1 space-y-2 py-0.5">
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-3 w-4/5" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

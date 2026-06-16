@@ -55,6 +55,77 @@ export interface Appointment {
   contact: { id: string; name: string | null; phone: string };
 }
 
+export interface InvoiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unitKes: number;
+  lineKes: number;
+}
+
+// draft | pending_approval | pending | paid | failed | cancelled
+export interface Invoice {
+  id: string;
+  number: number;
+  ref: string; // e.g. INV-0042
+  amountKes: number;
+  taxRate: number; // percentage, e.g. 16
+  taxKes: number; // materialized tax amount
+  currency: string;
+  description: string;
+  notes: string | null;
+  status: string;
+  payUrl: string | null;
+  publicUrl: string;
+  dueDate: string | null;
+  issuedAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  contact: { id: string; name: string | null; phone: string };
+  items: InvoiceItem[];
+}
+
+export interface NewInvoice {
+  contactId: string;
+  items: Array<{ description: string; quantity: number; unitKes: number }>;
+  description?: string;
+  notes?: string;
+  dueDate?: string;
+  taxRate?: number; // percentage, e.g. 16
+  withPayLink?: boolean;
+  send?: boolean;
+}
+
+export interface InvoiceBranding {
+  logoUrl: string | null;
+  businessPhone: string | null;
+  businessEmail: string | null;
+  payInstructions: string | null;
+}
+
+// Shape returned by the public (unauthenticated) hosted invoice endpoint.
+export interface PublicInvoice {
+  ref: string;
+  business: string;
+  logoUrl: string | null;
+  businessPhone: string | null;
+  businessEmail: string | null;
+  payInstructions: string | null;
+  customer: string;
+  amountKes: number;
+  taxRate: number; // percentage, e.g. 16
+  taxKes: number; // materialized tax amount
+  currency: string;
+  description: string;
+  notes: string | null;
+  status: string;
+  payUrl: string | null;
+  dueDate: string | null;
+  issuedAt: string | null;
+  paidAt: string | null;
+  items: Array<{ description: string; quantity: number; unitKes: number; lineKes: number }>;
+}
+
 export interface BookingSettings {
   enabled: boolean;
   slotMinutes: number;
@@ -140,6 +211,7 @@ export interface TenantInfo {
   billing: BillingStatus;
   role: Role;
   googleConnected: boolean;
+  branding?: InvoiceBranding;
 }
 
 export interface Me {
@@ -282,6 +354,11 @@ export const api = {
     name?: string;
     completeOnboarding?: boolean;
   }) => request<{ ok: true }>("/api/tenant/profile", { method: "PUT", body: JSON.stringify(body) }),
+  draftProfile: (seed: string) =>
+    request<{ description: string }>("/api/tenant/profile/draft", {
+      method: "POST",
+      body: JSON.stringify({ seed }),
+    }),
   connectWhatsApp: (body: { phoneNumberId: string; accessToken: string; wabaId?: string }) =>
     request<{ ok: true; number: string; name: string }>("/api/tenant/whatsapp", {
       method: "POST",
@@ -311,6 +388,25 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  saveBranding: (body: InvoiceBranding) =>
+    request<{ ok: true }>("/api/tenant/branding", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  uploadLogo: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_URL}/api/tenant/logo`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(body?.error ?? "Upload failed");
+    }
+    return res.json() as Promise<{ logoUrl: string }>;
+  },
   deleteContact: (id: string) =>
     request<{ ok: true }>(`/api/contacts/${id}`, { method: "DELETE" }),
   exportData: async () => {
@@ -435,4 +531,18 @@ export const api = {
       `/api/contacts/${contactId}/invoices/${invoiceId}/approve`,
       { method: "POST" },
     ),
+
+  // invoices
+  invoices: (status?: string) =>
+    request<Invoice[]>(`/api/invoices${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  createInvoice: (body: NewInvoice) =>
+    request<Invoice>("/api/invoices", { method: "POST", body: JSON.stringify(body) }),
+  sendInvoice: (id: string) =>
+    request<{ ok: true; delivered: boolean; publicUrl: string; invoice: Invoice }>(
+      `/api/invoices/${id}/send`,
+      { method: "POST" },
+    ),
+  cancelInvoice: (id: string) =>
+    request<{ ok: true }>(`/api/invoices/${id}/cancel`, { method: "POST" }),
+  publicInvoice: (token: string) => request<PublicInvoice>(`/api/public/invoices/${token}`),
 };

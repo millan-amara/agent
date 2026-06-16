@@ -33,6 +33,12 @@ model Tenant {
   bookingConfig   String   @default("{}")
   // Tenant's own Paystack secret key — enables in-chat payment collection
   paystackSecretKey String?
+  // Invoice branding — shown on the public hosted invoice page (/i/<token>).
+  logoUrl       String?
+  businessPhone String?
+  businessEmail String?
+  // Free-text payment instructions for offline invoices (e.g. M-Pesa Till).
+  payInstructions String?
   // Azayon subscription state. Pilot phase: trial only, no enforcement.
   plan            String   @default("trial") // trial | active | past_due
   trialEndsAt     DateTime?
@@ -56,6 +62,9 @@ model Tenant {
   // Google Calendar sync (per-tenant OAuth).
   googleRefreshToken String?
   googleCalendarId   String?  @default("primary")
+  // Monotonic per-tenant invoice counter — the source of human invoice numbers
+  // (INV-0001, INV-0002, …). Incremented inside the create transaction.
+  invoiceSeq      Int      @default(0)
   createdAt       DateTime @default(now())
 
   users        User[]
@@ -111,21 +120,55 @@ model Invoice {
   id          String    @id @default(cuid())
   tenantId    String
   contactId   String
-  // KES subunits (cents) — Paystack convention
+  // Human invoice number, unique per tenant (rendered as INV-0042). Allocated
+  // from Tenant.invoiceSeq at create time.
+  number      Int
+  // Unguessable token for the public hosted invoice page (/i/<token>). Distinct
+  // from the (sequential, enumerable) number and from paystackRef.
+  publicToken String    @unique
+  // KES subunits (cents) — Paystack convention. Grand total = sum(items) + tax.
   amountCents Int
+  // Tax as a percentage of the subtotal (e.g. 16 for VAT). taxCents is the
+  // materialized amount = round(subtotal * taxRate / 100), kept for accounting.
+  taxRate     Float     @default(0)
+  taxCents    Int       @default(0)
+  currency    String    @default("KES")
+  // Short title / summary of the invoice. For legacy single-amount invoices this
+  // is the only descriptor; line-item invoices also carry it as a heading.
   description String
-  status      String    @default("pending") // pending_approval | pending | paid | failed | cancelled
+  notes       String?
+  // draft (created, not issued) | pending_approval (AI proposed) |
+  // pending (issued, awaiting payment) | paid | failed | cancelled
+  status      String    @default("pending")
   paystackRef String    @unique
-  // Null until the payment link is generated (pending_approval invoices have no
-  // link yet — it's created when an owner approves the send).
+  // Null when no Paystack link has been minted — record-only invoices and
+  // pending_approval invoices both have no link yet.
   payUrl      String?
+  dueDate     DateTime?
+  // When the invoice was issued/sent to the customer (null while draft).
+  issuedAt    DateTime?
   paidAt      DateTime?
   createdAt   DateTime  @default(now())
 
-  tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  contact Contact @relation(fields: [contactId], references: [id])
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  contact Contact       @relation(fields: [contactId], references: [id])
+  items   InvoiceItem[]
 
+  @@unique([tenantId, number])
   @@index([tenantId, status])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int     @default(1)
+  // KES subunits (cents) per unit. Line total = quantity * unitCents.
+  unitCents   Int
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
 }
 
 // WhatsApp template message (required for messaging outside the 24h window).

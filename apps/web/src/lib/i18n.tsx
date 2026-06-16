@@ -18,6 +18,7 @@ const DICT: Record<string, { en: string; sw: string }> = {
   "nav.inbox": { en: "Inbox", sw: "Ujumbe" },
   "nav.pipeline": { en: "Pipeline", sw: "Hatua" },
   "nav.bookings": { en: "Bookings", sw: "Miadi" },
+  "nav.invoices": { en: "Invoices", sw: "Ankara" },
   "nav.broadcasts": { en: "Broadcasts", sw: "Matangazo" },
   "nav.contacts": { en: "Contacts", sw: "Wateja" },
   "nav.simulator": { en: "Simulator", sw: "Jaribio" },

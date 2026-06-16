@@ -1,4 +1,6 @@
+import { Flame, AlertTriangle, User, Bot, Ban } from "lucide-react";
 import type { ApiContact } from "@/lib/api";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
 /**
  * The glanceable AI state — on every conversation row and in the chat header.
@@ -6,38 +8,33 @@ import type { ApiContact } from "@/lib/api";
  * else stays neutral.
  */
 export function StatePill({ contact, size = "sm" }: { contact: ApiContact; size?: "sm" | "md" }) {
-  const cls = size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-xs";
+  let tone: BadgeTone = "primary";
+  let Icon = Bot;
+  let label = "AI";
+
   if (contact.optedOut) {
-    return (
-      <span className={`${cls} rounded-full border border-line bg-canvas font-medium text-muted`}>
-        Opted out
-      </span>
-    );
+    tone = "neutral";
+    Icon = Ban;
+    label = "Opted out";
+  } else if (contact.needsHuman) {
+    tone = "attention";
+    Icon = Flame;
+    label = "Needs you";
+  } else if (contact.needsReview) {
+    tone = "attention";
+    Icon = AlertTriangle;
+    label = "Needs review";
+  } else if (contact.aiPaused) {
+    tone = "neutral";
+    Icon = User;
+    label = "Human";
   }
-  if (contact.needsHuman) {
-    return (
-      <span className={`${cls} rounded-full bg-attentionSoft font-medium text-attention`}>
-        🔥 Needs you
-      </span>
-    );
-  }
-  if (contact.needsReview) {
-    return (
-      <span className={`${cls} rounded-full bg-attentionSoft font-medium text-attention`}>
-        ⚠️ Needs review
-      </span>
-    );
-  }
-  if (contact.aiPaused) {
-    return (
-      <span className={`${cls} rounded-full border border-line bg-canvas font-medium text-muted`}>
-        👤 Human
-      </span>
-    );
-  }
+
+  const iconSize = size === "sm" ? "size-3" : "size-3.5";
   return (
-    <span className={`${cls} rounded-full bg-primary-soft font-medium text-primary-dark`}>
-      🤖 AI
-    </span>
+    <Badge tone={tone} size={size}>
+      <Icon className={iconSize} strokeWidth={2.25} />
+      {label}
+    </Badge>
   );
 }

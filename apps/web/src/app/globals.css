@@ -2,11 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-canvas text-ink antialiased;
+@layer base {
+  body {
+    @apply bg-canvas text-ink antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Confident, slightly tightened headings. Color is inherited (ink on the
+     light canvas, white on dark panels) — never force it here. */
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight;
+  }
+
+  /* One consistent focus treatment across the whole app */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary/40 ring-offset-1 ring-offset-canvas;
+  }
+
+  /* Inputs/buttons feel responsive without being twitchy */
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    @apply transition-colors duration-150;
+  }
 }
 
-/* KES amounts, phone numbers, stats — keep digit columns steady */
-.tnum {
-  font-variant-numeric: tabular-nums;
+@layer components {
+  /* Readable legal/long-form prose for privacy & terms pages */
+  .legal h2 {
+    @apply mb-3 mt-12 scroll-mt-20 text-xl font-semibold tracking-tight first:mt-0;
+  }
+  .legal h3 {
+    @apply mb-2 mt-7 text-base font-semibold;
+  }
+  .legal p,
+  .legal ul,
+  .legal ol {
+    @apply mb-4 text-[15px] leading-relaxed text-ink/80;
+  }
+  .legal ul {
+    @apply list-disc space-y-1.5 pl-5;
+  }
+  .legal ol {
+    @apply list-decimal space-y-1.5 pl-5;
+  }
+  .legal a {
+    @apply font-medium text-primary-700 underline underline-offset-2 hover:text-primary-800;
+  }
+  .legal strong {
+    @apply font-semibold text-ink;
+  }
+}
+
+@layer utilities {
+  /* KES amounts, phone numbers, stats — keep digit columns steady */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Loading skeleton block */
+  .skeleton {
+    @apply relative overflow-hidden rounded-card bg-line/60;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.55),
+      transparent
+    );
+  }
 }
