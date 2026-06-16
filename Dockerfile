@@ -30,5 +30,7 @@ COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 # Apply schema to the managed Postgres on boot, then start. (Pilot uses
 # `db push`; switch to `prisma migrate deploy` once migrations are committed.)
+# --accept-data-loss is required so push can apply the new Invoice unique
+# constraints (number/publicToken) non-interactively instead of prompting.
 WORKDIR /app/apps/api
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/index.js"]

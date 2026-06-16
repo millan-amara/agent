@@ -18,6 +18,9 @@ import {
   AlertTriangle,
   MailWarning,
   Loader2,
+  Info,
+  ExternalLink,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { api, AuthError, type Me } from "@/lib/api";
@@ -150,6 +153,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       <main className="flex min-h-0 flex-1 flex-col">
         {me && !me.emailVerified && <VerifyBanner />}
         {me && <BillingBanner state={me.tenant.billing?.state} isOwner={me.role === "owner"} />}
+        {me && <OldPlatformBanner />}
         <div className="min-h-0 flex-1">{children}</div>
       </main>
 
@@ -223,6 +227,50 @@ function BillingBanner({ state, isOwner }: { state?: string; isOwner: boolean })
           {readonly ? "Subscribe" : "Upgrade"}
         </Link>
       )}
+    </div>
+  );
+}
+
+/**
+ * Soft, dismissible notice pointing users to the previous Azayon platform —
+ * for anyone whose data didn't fully migrate or who simply prefers it. Temporary;
+ * dismissal is remembered per-browser so it doesn't nag.
+ */
+function OldPlatformBanner() {
+  // Default hidden so dismissed users never see a flash before storage is read.
+  const [dismissed, setDismissed] = useState(true);
+  useEffect(() => {
+    setDismissed(localStorage.getItem("azayon_old_platform_dismissed") === "1");
+  }, []);
+  if (dismissed) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-line bg-primary-soft px-4 py-2.5 text-xs text-primary-800">
+      <span className="flex items-center gap-2">
+        <Info className="size-4 shrink-0" />
+        Looking for something from the old Azayon? You can still use the previous platform while we
+        finish moving everything over.
+      </span>
+      <span className="flex shrink-0 items-center gap-3">
+        <a
+          href="https://azayon-crm-client.netlify.app"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 font-semibold underline underline-offset-2"
+        >
+          Open old platform
+          <ExternalLink className="size-3.5" />
+        </a>
+        <button
+          onClick={() => {
+            localStorage.setItem("azayon_old_platform_dismissed", "1");
+            setDismissed(true);
+          }}
+          aria-label="Dismiss"
+          className="text-primary-700/70 hover:text-primary-800"
+        >
+          <X className="size-4" />
+        </button>
+      </span>
     </div>
   );
 }
