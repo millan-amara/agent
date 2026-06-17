@@ -7,6 +7,7 @@ import { db } from "../db.js";
 import type { QueueDriver } from "../queue/queue.js";
 import { handleInboundText } from "../inbound.js";
 import { markInvoicePaid, verifyPaystackSignature } from "../paystack.js";
+import { decryptSecret } from "../secrets.js";
 import { PLANS, type TierId } from "../billing.js";
 import { audit } from "../audit.js";
 import { publish } from "../events.js";
@@ -92,7 +93,7 @@ export function registerWebhookRoutes(app: FastifyInstance, queue: QueueDriver):
       const signature = req.headers["x-paystack-signature"];
       if (
         typeof signature !== "string" ||
-        !verifyPaystackSignature(raw, signature, invoice.tenant.paystackSecretKey)
+        !verifyPaystackSignature(raw, signature, decryptSecret(invoice.tenant.paystackSecretKey))
       ) {
         Sentry.captureMessage("[paystack] webhook signature mismatch", {
           level: "warning",

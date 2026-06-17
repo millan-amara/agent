@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+import { config, isProd } from "./config.js";
 import { fetchWithTimeout } from "./http.js";
 
 /**
@@ -16,9 +16,14 @@ export async function sendEmail(opts: {
   text?: string;
 }): Promise<void> {
   if (!config.RESEND_API_KEY) {
-    console.log(
-      `[email:dev] to=${opts.to} subject="${opts.subject}"\n${opts.text ?? opts.html}`,
-    );
+    // Never print the body in production — it can carry reset/verify tokens.
+    if (isProd) {
+      console.warn(`[email] RESEND_API_KEY unset — email to ${opts.to} ("${opts.subject}") NOT sent.`);
+    } else {
+      console.log(
+        `[email:dev] to=${opts.to} subject="${opts.subject}"\n${opts.text ?? opts.html}`,
+      );
+    }
     return;
   }
   const res = await fetchWithTimeout(RESEND_SEND, {

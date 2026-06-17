@@ -25,6 +25,7 @@ import {
   type InvoiceItemInput,
 } from "../paystack.js";
 import { config } from "../config.js";
+import { encryptSecret } from "../secrets.js";
 import { ingestDoc, KbError } from "../kb.js";
 import { billingStatus, canSend } from "../billing.js";
 import { audit } from "../audit.js";
@@ -289,7 +290,7 @@ export function registerApiRoutes(
     }
     await db.tenant.update({
       where: { id: auth.tenant.id },
-      data: { paystackSecretKey: secretKey.trim() },
+      data: { paystackSecretKey: encryptSecret(secretKey.trim()) },
     });
     return { ok: true };
   });
@@ -532,7 +533,7 @@ export function registerApiRoutes(
       where: { id: auth.tenant.id },
       data: {
         waPhoneNumberId: phoneNumberId.trim(),
-        waAccessToken: accessToken.trim(),
+        waAccessToken: encryptSecret(accessToken.trim()),
         ...(wabaId?.trim() ? { waWabaId: wabaId.trim() } : {}),
       },
     });
@@ -564,7 +565,7 @@ export function registerApiRoutes(
         where: { id: auth.tenant.id },
         data: {
           waPhoneNumberId: phoneNumberId.trim(),
-          waAccessToken: token,
+          waAccessToken: encryptSecret(token),
           waWabaId: wabaId.trim(),
         },
       });
@@ -616,7 +617,11 @@ export function registerApiRoutes(
   });
 
   // Upload a .txt / .md file.
-  app.post("/api/kb/upload", async (req, reply) => {
+  // Upload → embeddings (Voyage) cost; rate-limit per IP to bound spend.
+  app.post(
+    "/api/kb/upload",
+    { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const auth = await requireAuth(req, reply);
     if (!auth) return;
     const file = await req.file();

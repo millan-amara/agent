@@ -13,6 +13,14 @@ export interface ToolContext {
   stages: string[];
 }
 
+// Hard ceiling on a single AI-initiated invoice (defense in depth; the approval
+// gate is the primary control). Owners can raise larger invoices manually.
+const MAX_AI_INVOICE_KES = 1_000_000;
+// Caps on attacker-controlled free text the AI persists to the contact record.
+const MAX_LEAD_FIELDS = 30;
+const MAX_LEAD_KEY_LEN = 60;
+const MAX_LEAD_VALUE_LEN = 500;
+
 export interface TenantCapabilities {
   booking: boolean;
   payments: boolean;
@@ -22,14 +30,16 @@ export interface TenantCapabilities {
 /**
  * Whether this tenant gates customer-facing payments behind owner approval
  * (stakes-aware: money is the one thing the AI drafts but never sends on a
- * guess). Default off — empty config preserves the auto-send behavior.
+ * guess). Fail-safe DEFAULT ON: a human approves the payment link unless the
+ * owner has explicitly opted into auto-send (`payments: false`). This keeps a
+ * customer from socially-engineering the AI into sending an arbitrary live link.
  */
 export function paymentApprovalRequired(tenant: Tenant): boolean {
   try {
     const cfg = JSON.parse(tenant.requireApproval) as { payments?: boolean };
-    return cfg.payments === true;
+    return cfg.payments !== false;
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -216,10 +226,21 @@ export async function executeTool(
   switch (name) {
     case "update_lead": {
       const data: { name?: string; fields?: string } = {};
-      if (typeof input.name === "string" && input.name.trim()) data.name = input.name.trim();
-      if (input.fields && typeof input.fields === "object") {
+      if (typeof input.name === "string" && input.name.trim()) {
+        data.name = input.name.trim().slice(0, 120);
+      }
+      if (input.fields && typeof input.fields === "object" && !Array.isArray(input.fields)) {
         const existing = JSON.parse(ctx.contact.fields) as Record<string, unknown>;
-        data.fields = JSON.stringify({ ...existing, ...(input.fields as object) });
+        const merged: Record<string, unknown> = { ...existing };
+        // The model relays attacker-controlled text here — persist only bounded
+        // scalars under bounded keys, and cap how many fields can accumulate.
+        for (const [k, v] of Object.entries(input.fields as Record<string, unknown>)) {
+          if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") continue;
+          const key = k.slice(0, MAX_LEAD_KEY_LEN);
+          if (!(key in merged) && Object.keys(merged).length >= MAX_LEAD_FIELDS) continue;
+          merged[key] = typeof v === "string" ? v.slice(0, MAX_LEAD_VALUE_LEN) : v;
+        }
+        data.fields = JSON.stringify(merged);
       }
       const updated = await db.contact.update({ where: { id: ctx.contact.id }, data });
       ctx.contact = updated;
@@ -315,10 +336,14 @@ export async function executeTool(
     }
     case "create_invoice": {
       const amount = Number(input.amount_kes);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        return "Error: amount_kes must be a positive number.";
+      // Server-side sanity bounds — the prompt-level "use listed prices only" rule
+      // is not a security control (customer text can try to override it). A hard
+      // ceiling blunts a manipulated AI from minting an absurd live charge; the
+      // approval gate (default on) is the primary control.
+      if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_AI_INVOICE_KES) {
+        return `Error: amount_kes must be a positive number up to ${MAX_AI_INVOICE_KES.toLocaleString()}.`;
       }
-      const description = String(input.description ?? "Payment");
+      const description = String(input.description ?? "Payment").slice(0, 200);
       try {
         // Stakes-aware gate: when the tenant requires approval, the AI proposes
         // the payment but a human sends the link. Never fabricate a link here.

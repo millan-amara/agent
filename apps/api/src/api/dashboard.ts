@@ -1,8 +1,17 @@
+import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
 import { config } from "../config.js";
 import { requireAuth } from "../auth/auth.js";
 import { usdFor, usdToKes } from "../costs.js";
+
+/** Constant-time compare of a request-supplied token against the configured one. */
+function tokenMatches(provided: unknown, expected: string): boolean {
+  if (typeof provided !== "string") return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 /**
  * The ROI dashboard: answers "what did Azayon make me this month?".
@@ -13,7 +22,7 @@ export function registerDashboardRoutes(app: FastifyInstance): void {
   // Internal-only: per-tenant LLM cost (KES), split by model. Guarded by a
   // shared admin token, not the tenant session. Disabled when ADMIN_TOKEN unset.
   app.get("/api/admin/costs", async (req, reply) => {
-    if (!config.ADMIN_TOKEN || req.headers["x-admin-token"] !== config.ADMIN_TOKEN) {
+    if (!config.ADMIN_TOKEN || !tokenMatches(req.headers["x-admin-token"], config.ADMIN_TOKEN)) {
       return reply.code(404).send({ error: "not found" });
     }
     const monthStart = new Date().toISOString().slice(0, 8) + "01";

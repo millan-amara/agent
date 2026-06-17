@@ -1,6 +1,7 @@
 import type { Contact, Tenant } from "@prisma/client";
 import { config } from "../config.js";
 import { fetchWithTimeout } from "../http.js";
+import { decryptSecret } from "../secrets.js";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -36,7 +37,7 @@ export class WhatsAppCloudSender implements MessageSender {
     if (contact.isSimulated) return null;
     if (!windowIsOpen(contact)) throw new WindowClosedError();
     const phoneNumberId = tenant.waPhoneNumberId ?? config.WA_PHONE_NUMBER_ID;
-    const token = tenant.waAccessToken ?? config.WA_ACCESS_TOKEN;
+    const token = tenantToken(tenant);
     const res = await fetchWithTimeout(
       `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
       {
@@ -72,5 +73,5 @@ export class ConsoleSender implements MessageSender {
 
 /** Resolves a Cloud API token for tenant-level Graph calls (connect/verify). */
 export function tenantToken(tenant: Tenant): string | undefined {
-  return tenant.waAccessToken ?? config.WA_ACCESS_TOKEN;
+  return tenant.waAccessToken ? decryptSecret(tenant.waAccessToken) : config.WA_ACCESS_TOKEN;
 }

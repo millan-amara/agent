@@ -16,6 +16,14 @@ const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, timeout: 60_000
 const MAX_TOOL_ITERATIONS = 8;
 const HISTORY_LIMIT = 40;
 
+// Abuse / cost guard. One hostile contact can amplify a flood of inbound
+// messages into many model calls (a router classification plus up to
+// MAX_TOOL_ITERATIONS reply calls per turn). When a single contact exceeds this
+// inbound volume in the window, hand off to a human — which pauses the AI for
+// that contact — instead of continuing to spend the tenant's token budget.
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const MAX_INBOUND_PER_WINDOW = 30;
+
 /**
  * The core loop: load tenant + contact + history, ask Claude with CRM tools,
  * execute tool calls, send the final reply. Called by the queue after the
@@ -105,6 +113,25 @@ async function runAgentTurnInner(
   }
 
   const ctx: ToolContext = { tenant, contact, stages };
+
+  // Cost/abuse guard — runs before any model call (router or reply). A genuine
+  // follow-up run carries no new inbound and is exempt.
+  if (!opts.followUpNote) {
+    const recentInbound = await db.message.count({
+      where: {
+        contactId,
+        direction: "in",
+        createdAt: { gte: new Date(Date.now() - RATE_WINDOW_MS) },
+      },
+    });
+    if (recentInbound > MAX_INBOUND_PER_WINDOW) {
+      await executeTool(ctx, "escalate_to_human", {
+        reason: "High message volume from this contact — AI paused for review",
+      });
+      return;
+    }
+  }
+
   const caps = await tenantCapabilities(tenant);
   const tools = buildTools(stages, caps);
 

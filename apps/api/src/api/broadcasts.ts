@@ -24,7 +24,11 @@ export function registerBroadcastRoutes(app: FastifyInstance): void {
     return { count: recipients.length };
   });
 
-  app.post("/api/broadcasts", async (req, reply) => {
+  // Fan-out send — rate-limit to bound abuse / accidental campaign storms.
+  app.post(
+    "/api/broadcasts",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const auth = await requireOwner(req, reply);
     if (!auth) return;
     const { templateId, segment } = req.body as { templateId?: string; segment?: Segment };

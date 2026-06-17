@@ -27,6 +27,10 @@ const schema = z.object({
   EMAIL_FROM: z.string().default("Azayon <onboarding@azayon.app>"),
   // Internal cost dashboard. Set to enable /api/admin/costs (x-admin-token).
   ADMIN_TOKEN: z.string().optional(),
+  // Key for at-rest encryption of per-tenant secrets (WhatsApp/Paystack/Google
+  // creds). Any high-entropy string; SHA-256'd to a 32-byte AES key. Required in
+  // production — see the fail-fast block below.
+  SECRETS_ENCRYPTION_KEY: z.string().optional(),
   // USD→KES for internal cost reporting (rough; update as the rate moves).
   USD_TO_KES: z.coerce.number().default(130),
 
@@ -62,6 +66,14 @@ if (isProd) {
   if (!config.WEB_ORIGIN) missing.push("WEB_ORIGIN (CORS would otherwise be open to any origin)");
   if (!config.DATABASE_URL.startsWith("postgres")) {
     missing.push("DATABASE_URL (must be a postgresql:// URL in production)");
+  }
+  if (!config.SECRETS_ENCRYPTION_KEY) {
+    missing.push("SECRETS_ENCRYPTION_KEY (tenant credentials would otherwise be stored unencrypted)");
+  }
+  // The verify token is the only thing guarding the public webhook-subscription
+  // handshake; the in-repo default must never reach production.
+  if (config.WA_VERIFY_TOKEN === "azayon-dev-verify") {
+    missing.push("WA_VERIFY_TOKEN (must be changed from the public default)");
   }
   // WA_APP_SECRET is NOT required at boot — you may deploy before connecting
   // WhatsApp. It's enforced at the webhook layer instead: in prod, inbound

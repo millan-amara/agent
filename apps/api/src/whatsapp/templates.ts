@@ -2,6 +2,7 @@ import type { Contact, Template, Tenant } from "@prisma/client";
 import { config } from "../config.js";
 import { db } from "../db.js";
 import { fetchWithTimeout } from "../http.js";
+import { tenantToken } from "./sender.js";
 
 /**
  * WhatsApp template messages — the only legal way to message a customer
@@ -13,7 +14,7 @@ const GRAPH = "https://graph.facebook.com/v21.0";
 
 function creds(tenant: Tenant): { wabaId: string; token: string } | null {
   const wabaId = tenant.waWabaId ?? config.WA_WABA_ID;
-  const token = tenant.waAccessToken ?? config.WA_ACCESS_TOKEN;
+  const token = tenantToken(tenant);
   if (!wabaId || !token) return null;
   return { wabaId, token };
 }
@@ -104,7 +105,7 @@ export async function sendTemplateMessage(
   template: Template,
 ): Promise<string | null> {
   const phoneNumberId = tenant.waPhoneNumberId ?? config.WA_PHONE_NUMBER_ID;
-  const token = tenant.waAccessToken ?? config.WA_ACCESS_TOKEN;
+  const token = tenantToken(tenant);
   const vars = variableCount(template.body);
   const params = [contact.name ?? "there", tenant.name].slice(0, vars);
 

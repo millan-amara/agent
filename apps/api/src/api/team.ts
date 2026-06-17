@@ -22,7 +22,11 @@ export function registerTeamRoutes(app: FastifyInstance): void {
     return users;
   });
 
-  app.post("/api/team/invite", async (req, reply) => {
+  // Sends an email — rate-limit to blunt invite-spam / email-bombing.
+  app.post(
+    "/api/team/invite",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const auth = await requireOwner(req, reply);
     if (!auth) return;
     const { email, role } = req.body as { email?: string; role?: string };

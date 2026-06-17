@@ -2,6 +2,7 @@ import type { Tenant } from "@prisma/client";
 import { config } from "./config.js";
 import { db } from "./db.js";
 import { fetchWithTimeout } from "./http.js";
+import { decryptSecret } from "./secrets.js";
 
 /**
  * Google Calendar sync (per-tenant OAuth). Pushes internal appointments to the
@@ -16,7 +17,7 @@ const SCOPES = "https://www.googleapis.com/auth/calendar.events";
 
 export const googleConfigured = Boolean(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET);
 
-/** Consent URL; `state` carries the tenant id through the redirect. */
+/** Consent URL; `state` carries a single-use CSRF nonce through the redirect. */
 export function googleAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: config.GOOGLE_CLIENT_ID ?? "",
@@ -54,7 +55,7 @@ async function accessToken(tenant: Tenant): Promise<string | null> {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      refresh_token: tenant.googleRefreshToken,
+      refresh_token: decryptSecret(tenant.googleRefreshToken),
       client_id: config.GOOGLE_CLIENT_ID ?? "",
       client_secret: config.GOOGLE_CLIENT_SECRET ?? "",
       grant_type: "refresh_token",

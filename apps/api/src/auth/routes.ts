@@ -113,7 +113,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
   });
 
   // Confirm email ownership from the verification link.
-  app.post("/api/auth/verify-email", async (req, reply) => {
+  app.post("/api/auth/verify-email", authLimit(10), async (req, reply) => {
     const { token } = req.body as { token?: string };
     if (!token) return reply.code(400).send({ error: "A token is required." });
     const userId = await consumeAuthToken(token, "verify");
@@ -123,7 +123,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
   });
 
   // Resend the verification email to the logged-in user.
-  app.post("/api/auth/resend-verification", async (req, reply) => {
+  app.post("/api/auth/resend-verification", authLimit(5), async (req, reply) => {
     const auth = await requireAuth(req, reply);
     if (!auth) return;
     if (auth.user.emailVerified) return { ok: true };

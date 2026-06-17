@@ -3,6 +3,7 @@ import type { Contact, Tenant } from "@prisma/client";
 import { db } from "./db.js";
 import { publish } from "./events.js";
 import { fetchWithTimeout } from "./http.js";
+import { decryptSecret } from "./secrets.js";
 
 /**
  * Paystack payment collection (per-tenant account). One provider covers
@@ -36,6 +37,7 @@ async function initializePaystack(
   if (!tenant.paystackSecretKey) {
     throw new PaystackError("Payments are not configured for this business.");
   }
+  const secretKey = decryptSecret(tenant.paystackSecretKey);
   // Paystack requires an email; WhatsApp leads rarely give one — use a
   // deterministic synthetic address keyed to the customer's phone.
   const email = `${contact.phone.replace(/[^0-9a-z]/gi, "")}@customers.azayon.app`;
@@ -43,7 +45,7 @@ async function initializePaystack(
   const res = await fetchWithTimeout(`${PAYSTACK}/transaction/initialize`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${tenant.paystackSecretKey}`,
+      Authorization: `Bearer ${secretKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

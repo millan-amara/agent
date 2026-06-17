@@ -33,4 +33,8 @@ COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 # --accept-data-loss is required so push can apply the new Invoice unique
 # constraints (number/publicToken) non-interactively instead of prompting.
 WORKDIR /app/apps/api
+# Drop root: the node:slim image ships a non-privileged `node` user (uid 1000).
+# Copied files are world-readable and Prisma resolves from the local node_modules,
+# so boot-time `db push` + the server run fine without elevated privileges.
+USER node
 CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/index.js"]
