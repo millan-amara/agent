@@ -10,6 +10,11 @@ const apiOrigin = (() => {
   }
 })();
 
+// The live inbox/simulator opens a WebSocket to the API (/api/ws). WS uses the
+// ws/wss scheme, which connect-src does NOT derive from the https:// origin, so
+// allow it explicitly (https -> wss, http -> ws).
+const apiWsOrigin = apiOrigin.replace(/^http/, "ws");
+
 // Meta JS SDK (connect.facebook.net) + its frames power the WhatsApp Embedded
 // Signup flow; without these the connect button breaks.
 const csp = [
@@ -22,7 +27,7 @@ const csp = [
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline' https://connect.facebook.net",
-  `connect-src 'self' ${apiOrigin} https://graph.facebook.com`.trim(),
+  `connect-src 'self' ${apiOrigin} ${apiWsOrigin} https://graph.facebook.com`.replace(/\s+/g, " ").trim(),
   "frame-src https://www.facebook.com https://web.facebook.com",
 ].join("; ");
 
