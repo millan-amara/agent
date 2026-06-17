@@ -1,6 +1,6 @@
 /**
  * Renders one or more schema.org nodes as a JSON-LD <script>. Pass a single node
- * or an array — arrays are wrapped in an "@graph" so nodes can cross-reference by
+ * or an array; arrays are wrapped in an "@graph" so nodes can cross-reference by
  * "@id". The "@context" is added here so callers never repeat it.
  *
  * JSON.stringify output is safe inside a <script type="application/ld+json"> tag;

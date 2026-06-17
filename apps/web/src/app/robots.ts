@@ -3,7 +3,7 @@ import { SITE } from "@/lib/site";
 
 /**
  * Allow crawling of the public marketing site, but keep the authenticated app
- * and hosted invoice pages out of the index — they require a session or a
+ * and hosted invoice pages out of the index; they require a session or a
  * private token and have no SEO value.
  */
 export default function robots(): MetadataRoute.Robots {

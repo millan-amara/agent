@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { SITE } from "@/lib/site";
 
-/** PWA / web app manifest — also feeds richer install + theming metadata. */
+/** PWA / web app manifest. Also feeds richer install + theming metadata. */
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: SITE.name,

@@ -38,7 +38,7 @@ export function MarketingFooter() {
             <LogoFull className="h-8" white />
             <p className="mt-3 text-sm text-primary-100/80">
               The AI front desk for WhatsApp-first businesses. Reply, book, and collect
-              payments — even when your team is busy.
+              payments, even when your team is busy.
             </p>
           </div>
 

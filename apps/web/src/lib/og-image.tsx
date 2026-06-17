@@ -7,7 +7,7 @@ import { ImageResponse } from "next/og";
 
 export const ogSize = { width: 1200, height: 630 };
 export const ogContentType = "image/png";
-export const ogAlt = "Azayon — the AI front desk for WhatsApp-first businesses";
+export const ogAlt = "Azayon, the AI front desk for WhatsApp-first businesses";
 
 export function renderOgImage() {
   return new ImageResponse(

@@ -5,10 +5,11 @@ import { buttonStyles } from "@/components/ui/Button";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { JsonLd } from "@/components/JsonLd";
+import { Reveal } from "@/components/Reveal";
 import { softwareApplicationSchema, faqSchema, breadcrumbSchema } from "@/lib/structured-data";
 
 const PRICING_DESCRIPTION =
-  "Simple KES pricing for WhatsApp-first businesses. Every plan includes the full toolkit — AI replies, inbox, bookings, invoices, payments, and broadcasts. 14-day free trial.";
+  "Simple KES pricing for WhatsApp-first businesses. Every plan includes the full toolkit: AI replies, inbox, bookings, invoices, payments, and broadcasts. 14-day free trial.";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/pricing" },
   openGraph: {
     url: "/pricing",
-    title: "Pricing — Azayon",
+    title: "Pricing · Azayon",
     description: PRICING_DESCRIPTION,
   },
 };
@@ -107,7 +108,7 @@ const FAQS = [
   },
   {
     q: "What happens if I go over my limit?",
-    a: "New conversations are paused until the next billing cycle or until you upgrade — but your existing conversations keep working, so no one is left hanging.",
+    a: "New conversations are paused until the next billing cycle or until you upgrade, but your existing conversations keep working, so no one is left hanging.",
   },
   {
     q: "Is there a free trial?",
@@ -140,25 +141,25 @@ export default function PricingPage() {
       <main>
         {/* Hero */}
         <section className="mx-auto max-w-3xl px-5 py-16 text-center lg:py-20">
-          <span className="text-xs font-semibold uppercase tracking-wide text-primary-600">
+          <span className="az-fade-up inline-block text-xs font-semibold uppercase tracking-wide text-primary-600">
             Pricing
           </span>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
+          <h1 className="az-fade-up az-delay-1 mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
             Simple pricing for WhatsApp-first businesses
           </h1>
-          <p className="mt-4 text-lg text-muted">
-            Every plan includes the full toolkit. Pick the size that matches your volume — change it
-            anytime. All prices in KES.
+          <p className="az-fade-up az-delay-2 mt-4 text-lg text-muted">
+            Every plan includes the full toolkit. Pick the size that matches your volume, and change
+            it anytime. All prices in KES.
           </p>
         </section>
 
         {/* Cards */}
         <section className="mx-auto max-w-6xl px-5">
-          <div className="grid items-start gap-6 lg:grid-cols-3">
+          <Reveal stagger className="grid items-start gap-6 lg:grid-cols-3">
             {PLANS.map((plan) => (
               <div
                 key={plan.tier}
-                className={`relative rounded-card bg-surface p-7 ${
+                className={`relative rounded-card bg-surface p-7 transition-transform duration-200 hover:-translate-y-1 ${
                   plan.popular ? "border-2 border-primary-500 shadow-panel" : "border border-line"
                 }`}
               >
@@ -196,7 +197,7 @@ export default function PricingPage() {
                 </ul>
               </div>
             ))}
-          </div>
+          </Reveal>
           <p className="mt-8 text-center text-sm text-muted">
             All plans include a 14-day free trial. No card required to start.
           </p>
@@ -205,7 +206,7 @@ export default function PricingPage() {
         {/* Comparison table */}
         <section className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
           <h2 className="text-2xl font-semibold tracking-tight">Compare plans</h2>
-          <div className="mt-6 overflow-x-auto">
+          <Reveal className="mt-6 overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-line">
@@ -226,14 +227,14 @@ export default function PricingPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </Reveal>
         </section>
 
         {/* FAQ */}
         <section className="border-t border-line bg-surface">
           <div className="mx-auto max-w-3xl px-5 py-16 lg:py-24">
             <h2 className="text-center text-3xl font-semibold tracking-tight">Pricing questions</h2>
-            <div className="mt-10 divide-y divide-line border-y border-line">
+            <Reveal stagger className="mt-10 divide-y divide-line border-y border-line">
               {FAQS.map((f) => (
                 <details key={f.q} className="group py-5">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-semibold">
@@ -245,18 +246,18 @@ export default function PricingPage() {
                   <p className="mt-3 text-sm leading-relaxed text-muted">{f.a}</p>
                 </details>
               ))}
-            </div>
+            </Reveal>
           </div>
         </section>
 
         {/* CTA band */}
         <section className="mx-auto max-w-6xl px-5 py-16">
-          <div className="overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-700 to-primary-900 px-8 py-14 text-center text-white sm:px-12">
+          <Reveal className="overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-700 to-primary-900 px-8 py-14 text-center text-white sm:px-12">
             <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight">
               Start free, upgrade when you grow.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-lg text-primary-100/85">
-              Set up your AI, test it, and connect WhatsApp — all within your 14-day trial.
+              Set up your AI, test it, and connect WhatsApp, all within your 14-day trial.
             </p>
             <Link
               href="/signup"
@@ -265,7 +266,7 @@ export default function PricingPage() {
               Start free trial
               <ArrowRight className="size-[18px]" />
             </Link>
-          </div>
+          </Reveal>
         </section>
       </main>
       <MarketingFooter />

@@ -4,7 +4,7 @@ import { JsonLd } from "@/components/JsonLd";
 import { breadcrumbSchema } from "@/lib/structured-data";
 
 const TERMS_DESCRIPTION =
-  "The terms that govern your use of Azayon, operated by Peskaya Limited (Kenya) — accounts, plans, payments, acceptable use, and your responsibilities.";
+  "The terms that govern your use of Azayon, operated by Peskaya Limited (Kenya): accounts, plans, payments, acceptable use, and your responsibilities.";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/terms" },
   openGraph: {
     url: "/terms",
-    title: "Terms of Service — Azayon",
+    title: "Terms of Service · Azayon",
     description: TERMS_DESCRIPTION,
   },
 };
@@ -140,7 +140,7 @@ export default function TermsPage() {
       <p>
         Azayon uses automated systems to understand messages and generate replies on your behalf.
         While we work to make these responses helpful and accurate, <strong>AI can make
-        mistakes</strong> — it may misunderstand a message or produce an incorrect reply. You are
+        mistakes</strong>. It may misunderstand a message or produce an incorrect reply. You are
         responsible for configuring the assistant appropriately, reviewing sensitive actions, and
         using the available controls (such as human handoff and payment approval). You remain
         responsible for all messages sent from your WhatsApp number through Azayon.
@@ -163,7 +163,7 @@ export default function TermsPage() {
 
       <h2 id="third-party">10. Third-party services</h2>
       <p>
-        The Service relies on third parties — including Meta (WhatsApp), Paystack, and the providers
+        The Service relies on third parties, including Meta (WhatsApp), Paystack, and the providers
         listed in our Privacy Policy. Their availability and terms are outside our control, and we are
         not responsible for outages or changes they make. Your use of WhatsApp is also subject to
         Meta&apos;s terms.

@@ -9,7 +9,7 @@
   }
 
   /* Confident, slightly tightened headings. Color is inherited (ink on the
-     light canvas, white on dark panels) — never force it here. */
+     light canvas, white on dark panels), never force it here. */
   h1,
   h2,
   h3 {
@@ -59,7 +59,7 @@
 }
 
 @layer utilities {
-  /* KES amounts, phone numbers, stats — keep digit columns steady */
+  /* KES amounts, phone numbers, stats: keep digit columns steady */
   .tnum {
     font-variant-numeric: tabular-nums;
   }
@@ -77,5 +77,131 @@
       rgb(255 255 255 / 0.55),
       transparent
     );
+  }
+}
+
+/* ------------------------------------------------------------------ Motion */
+/* Marketing-page animations. Everything here is wrapped in a reduced-motion
+   guard so users who ask for less motion see the final state immediately with
+   no movement. Entrance utilities (az-*) play on load; the reveal classes are
+   toggled by the <Reveal> client component via IntersectionObserver. */
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes az-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes az-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes az-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96) translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes az-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-8px);
+    }
+  }
+
+  /* On-load entrance utilities. `both` keeps the start frame applied during any
+     delay so nothing flashes before it animates in. */
+  .az-fade-up {
+    animation: az-fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .az-fade-in {
+    animation: az-fade-in 0.9s ease both;
+  }
+  .az-pop {
+    animation: az-pop 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  /* Gentle perpetual bob for the floating hero stat cards. */
+  .az-float {
+    animation: az-float 5.5s ease-in-out infinite;
+  }
+  .az-float-slow {
+    animation: az-float 7.5s ease-in-out infinite;
+  }
+
+  .az-delay-1 {
+    animation-delay: 0.08s;
+  }
+  .az-delay-2 {
+    animation-delay: 0.16s;
+  }
+  .az-delay-3 {
+    animation-delay: 0.24s;
+  }
+  .az-delay-4 {
+    animation-delay: 0.32s;
+  }
+  .az-delay-5 {
+    animation-delay: 0.4s;
+  }
+
+  /* Scroll reveal: start hidden, transition in when <Reveal> adds .is-visible. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(22px);
+    transition:
+      opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Staggered variant: the wrapper stays in flow (e.g. a grid) while its direct
+     children animate in one after another. */
+  .reveal-group > * {
+    opacity: 0;
+    transform: translateY(22px);
+    transition:
+      opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal-group.is-visible > * {
+    opacity: 1;
+    transform: none;
+  }
+  .reveal-group.is-visible > *:nth-child(1) {
+    transition-delay: 0.04s;
+  }
+  .reveal-group.is-visible > *:nth-child(2) {
+    transition-delay: 0.11s;
+  }
+  .reveal-group.is-visible > *:nth-child(3) {
+    transition-delay: 0.18s;
+  }
+  .reveal-group.is-visible > *:nth-child(4) {
+    transition-delay: 0.25s;
+  }
+  .reveal-group.is-visible > *:nth-child(5) {
+    transition-delay: 0.32s;
+  }
+  .reveal-group.is-visible > *:nth-child(6) {
+    transition-delay: 0.39s;
   }
 }

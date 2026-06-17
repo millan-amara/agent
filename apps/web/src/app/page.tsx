@@ -24,19 +24,20 @@ import { buttonStyles } from "@/components/ui/Button";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { JsonLd } from "@/components/JsonLd";
+import { Reveal } from "@/components/Reveal";
 import { softwareApplicationSchema, faqSchema } from "@/lib/structured-data";
 
 const HOME_DESCRIPTION =
-  "Azayon helps businesses reply instantly, qualify customers, book appointments, send invoices, and collect payments from WhatsApp — even when your team is busy.";
+  "Azayon helps businesses reply instantly, qualify customers, book appointments, send invoices, and collect payments from WhatsApp, even when your team is busy.";
 
 export const metadata: Metadata = {
   // Absolute so the brand line isn't suffixed with the "· Azayon" template.
-  title: { absolute: "Azayon — Your WhatsApp, answered. Leads booked. Payments followed up." },
+  title: { absolute: "Azayon: Your WhatsApp, answered. Leads booked. Payments followed up." },
   description: HOME_DESCRIPTION,
   alternates: { canonical: "/" },
   openGraph: {
     url: "/",
-    title: "Azayon — Your WhatsApp, answered. Leads booked. Payments followed up.",
+    title: "Azayon: Your WhatsApp, answered. Leads booked. Payments followed up.",
     description: HOME_DESCRIPTION,
   },
 };
@@ -44,7 +45,7 @@ export const metadata: Metadata = {
 const FAQS = [
   {
     q: "Do I need a WhatsApp Business account?",
-    a: "Yes — Azayon connects through the official WhatsApp Business API. We guide you through linking it during setup, and you can test everything before you connect.",
+    a: "Yes. Azayon connects through the official WhatsApp Business API. We guide you through linking it during setup, and you can test everything before you connect.",
   },
   {
     q: "Can I test the AI before connecting WhatsApp?",
@@ -96,21 +97,21 @@ function Hero() {
     <section className="relative overflow-hidden">
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-16 lg:grid-cols-[1.05fr_1fr] lg:py-24">
         <div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-muted">
+          <span className="az-fade-up inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-muted">
             <span className="size-1.5 rounded-full bg-success" />
             Live in about 10 minutes
           </span>
-          <h1 className="mt-5 text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
+          <h1 className="az-fade-up az-delay-1 mt-5 text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
             Your WhatsApp, answered.
             <br />
             Leads booked.{" "}
             <span className="text-primary-600">Payments followed up.</span>
           </h1>
-          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted">
+          <p className="az-fade-up az-delay-2 mt-5 max-w-xl text-lg leading-relaxed text-muted">
             Azayon helps businesses reply instantly, qualify customers, book appointments,
-            send invoices, and collect payments from WhatsApp — even when your team is busy.
+            send invoices, and collect payments from WhatsApp, even when your team is busy.
           </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div className="az-fade-up az-delay-3 mt-8 flex flex-col gap-3 sm:flex-row">
             <Link href="/signup" className={buttonStyles("primary", "lg")}>
               Start free trial
               <ArrowRight className="size-[18px]" />
@@ -119,7 +120,7 @@ function Hero() {
               See how it works
             </a>
           </div>
-          <p className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted">
+          <p className="az-fade-up az-delay-4 mt-5 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted">
             <span className="flex items-center gap-1.5">
               <Check className="size-4 text-primary-600" /> 14-day free trial
             </span>
@@ -141,7 +142,7 @@ function Hero() {
 /** Hand-built product mockup: a WhatsApp-style chat beside floating result cards. */
 function HeroMockup() {
   return (
-    <div className="relative">
+    <div className="az-fade-in az-delay-2 relative">
       <div className="rounded-[20px] bg-gradient-to-br from-primary-700 to-primary-900 p-4 shadow-pop sm:p-6">
         {/* Chat surface */}
         <div className="overflow-hidden rounded-2xl bg-[#ECE5DD]">
@@ -170,15 +171,15 @@ function HeroMockup() {
       </div>
 
       {/* Floating result cards */}
-      <FloatCard className="-left-3 top-6 sm:-left-6">
+      <FloatCard className="az-float -left-3 top-6 sm:-left-6">
         <p className="text-xs text-muted">Collected this week</p>
         <p className="tnum text-lg font-semibold text-accent">KES 84,500</p>
       </FloatCard>
-      <FloatCard className="-right-3 top-1/3 sm:-right-6">
+      <FloatCard className="az-float-slow -right-3 top-1/3 sm:-right-6">
         <p className="text-xs text-muted">Bookings this week</p>
         <p className="tnum text-lg font-semibold text-ink">12</p>
       </FloatCard>
-      <FloatCard className="-right-2 bottom-6 sm:-right-5">
+      <FloatCard className="az-float -right-2 bottom-6 sm:-right-5">
         <p className="flex items-center gap-1.5 text-xs font-medium text-attention">
           <span className="size-1.5 rounded-full bg-attention" /> 4 conversations need you
         </p>
@@ -222,7 +223,7 @@ function Problem() {
     },
     {
       title: "Manual follow-up eats the day",
-      body: "Chasing quotes, reminders, and payments by hand is slow — and the ones that slip through never come back.",
+      body: "Chasing quotes, reminders, and payments by hand is slow, and the ones that slip through never come back.",
     },
     {
       title: "Bookings and payments scatter",
@@ -232,20 +233,20 @@ function Problem() {
   return (
     <section className="border-y border-line bg-surface">
       <div className="mx-auto max-w-6xl px-5 py-16 lg:py-20">
-        <div className="max-w-2xl">
+        <Reveal className="max-w-2xl">
           <Eyebrow>The problem</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             Customers message after hours. Staff miss follow-ups. Payments get delayed.
           </h2>
-        </div>
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
+        </Reveal>
+        <Reveal stagger className="mt-10 grid gap-6 md:grid-cols-3">
           {items.map((it) => (
             <div key={it.title} className="rounded-card border border-line bg-canvas p-6">
               <h3 className="text-base font-semibold">{it.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">{it.body}</p>
             </div>
           ))}
-        </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -259,7 +260,7 @@ function HowItWorks() {
       icon: Building2,
       step: "1",
       title: "Tell Azayon about your business",
-      body: "Services, prices, hours, FAQs, tone, and policies. No code — just describe how you work.",
+      body: "Services, prices, hours, FAQs, tone, and policies. No code, just describe how you work.",
     },
     {
       icon: MessagesSquare,
@@ -277,13 +278,13 @@ function HowItWorks() {
   return (
     <section id="how" className="scroll-mt-20">
       <div className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
-        <div className="max-w-2xl">
+        <Reveal className="max-w-2xl">
           <Eyebrow>How it works</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             From setup to answering customers in three steps
           </h2>
-        </div>
-        <div className="mt-12 grid gap-8 md:grid-cols-3">
+        </Reveal>
+        <Reveal stagger className="mt-12 grid gap-8 md:grid-cols-3">
           {steps.map((s) => (
             <div key={s.step} className="relative">
               <div className="flex items-center gap-3">
@@ -296,7 +297,7 @@ function HowItWorks() {
               <p className="mt-2 text-sm leading-relaxed text-muted">{s.body}</p>
             </div>
           ))}
-        </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -314,7 +315,7 @@ function Modules() {
     {
       icon: Columns3,
       title: "Pipeline",
-      body: "Watch every lead move from new to qualified to booked — nothing forgotten in a chat thread.",
+      body: "Watch every lead move from new to qualified to booked, with nothing forgotten in a chat thread.",
     },
     {
       icon: CalendarCheck,
@@ -329,32 +330,32 @@ function Modules() {
     {
       icon: Megaphone,
       title: "Broadcasts",
-      body: "Reach customers with approved WhatsApp templates — offers, reminders, and updates.",
+      body: "Reach customers with approved WhatsApp templates: offers, reminders, and updates.",
     },
     {
       icon: LayoutDashboard,
       title: "Dashboard",
-      body: "See revenue, leads, bookings, and follow-ups at a glance — the health of your business.",
+      body: "See revenue, leads, bookings, and follow-ups at a glance: the health of your business.",
     },
   ];
   return (
     <section id="product" className="scroll-mt-20 border-y border-line bg-surface">
       <div className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
-        <div className="max-w-2xl">
+        <Reveal className="max-w-2xl">
           <Eyebrow>The product</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             Everything your WhatsApp front desk needs
           </h2>
           <p className="mt-4 text-lg text-muted">
-            One system for conversations, bookings, and money — instead of three tools that
+            One system for conversations, bookings, and money, instead of three tools that
             don&apos;t talk to each other.
           </p>
-        </div>
-        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        </Reveal>
+        <Reveal stagger className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {mods.map((m) => (
             <div
               key={m.title}
-              className="rounded-card border border-line bg-canvas p-6 transition-shadow hover:shadow-card"
+              className="rounded-card border border-line bg-canvas p-6 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card"
             >
               <span className="grid size-10 place-items-center rounded-card bg-primary-soft text-primary-700">
                 <m.icon className="size-5" />
@@ -363,7 +364,7 @@ function Modules() {
               <p className="mt-1.5 text-sm leading-relaxed text-muted">{m.body}</p>
             </div>
           ))}
-        </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -383,7 +384,7 @@ function UseCases() {
   return (
     <section className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
       <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.1fr]">
-        <div>
+        <Reveal>
           <Eyebrow>Who it&apos;s for</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             Built for businesses that already run on chat
@@ -392,18 +393,18 @@ function UseCases() {
             If your customers already ask questions, request prices, book slots, or confirm
             payments on WhatsApp, Azayon fits into how your business already works.
           </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        </Reveal>
+        <Reveal stagger className="grid gap-3 sm:grid-cols-2">
           {cases.map((c) => (
             <div
               key={c}
-              className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-sm font-medium shadow-card"
+              className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-sm font-medium shadow-card transition-transform duration-200 hover:-translate-y-0.5"
             >
               <Check className="size-4 shrink-0 text-primary-600" />
               {c}
             </div>
           ))}
-        </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -436,18 +437,18 @@ function Trust() {
     {
       icon: Download,
       title: "Export your data",
-      body: "Your contacts, conversations, and records are yours — export them whenever you want.",
+      body: "Your contacts, conversations, and records are yours. Export them whenever you want.",
     },
     {
       icon: Lock,
       title: "Official WhatsApp connection",
-      body: "Connects through the WhatsApp Business API — no unofficial workarounds or risky hacks.",
+      body: "Connects through the WhatsApp Business API, with no unofficial workarounds or risky hacks.",
     },
   ];
   return (
     <section id="security" className="scroll-mt-20 bg-primary-900 text-white">
       <div className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
-        <div className="max-w-2xl">
+        <Reveal className="max-w-2xl">
           <span className="text-xs font-semibold uppercase tracking-wide text-primary-200/80">
             Trust &amp; control
           </span>
@@ -458,8 +459,8 @@ function Trust() {
             Azayon handles the busywork, but you stay in charge of customer data, payments, and
             every sensitive moment.
           </p>
-        </div>
-        <div className="mt-10 grid gap-x-8 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
+        </Reveal>
+        <Reveal stagger className="mt-10 grid gap-x-8 gap-y-7 sm:grid-cols-2 lg:grid-cols-3">
           {controls.map((c) => (
             <div key={c.title} className="flex gap-3.5">
               <span className="grid size-10 shrink-0 place-items-center rounded-card bg-white/10 text-primary-100">
@@ -471,7 +472,7 @@ function Trust() {
               </div>
             </div>
           ))}
-        </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -519,22 +520,22 @@ function Pricing() {
   return (
     <section id="pricing" className="scroll-mt-20 border-y border-line bg-surface">
       <div className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
-        <div className="mx-auto max-w-2xl text-center">
+        <Reveal className="mx-auto max-w-2xl text-center">
           <Eyebrow className="justify-center">Pricing</Eyebrow>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             Simple pricing for WhatsApp-first businesses
           </h2>
           <p className="mt-4 text-lg text-muted">
-            Every plan includes the full toolkit. Pick the size that matches your volume —
+            Every plan includes the full toolkit. Pick the size that matches your volume, and
             change it anytime.
           </p>
-        </div>
+        </Reveal>
 
-        <div className="mt-12 grid items-start gap-6 lg:grid-cols-3">
+        <Reveal stagger className="mt-12 grid items-start gap-6 lg:grid-cols-3">
           {PLANS.map((plan) => (
             <div
               key={plan.tier}
-              className={`relative rounded-card bg-canvas p-7 ${
+              className={`relative rounded-card bg-canvas p-7 transition-transform duration-200 hover:-translate-y-1 ${
                 plan.popular
                   ? "border-2 border-primary-500 shadow-panel"
                   : "border border-line"
@@ -570,7 +571,7 @@ function Pricing() {
               </ul>
             </div>
           ))}
-        </div>
+        </Reveal>
         <p className="mt-8 text-center text-sm text-muted">
           All plans include a 14-day free trial. No card required to start.
         </p>
@@ -584,13 +585,13 @@ function Pricing() {
 function FAQ() {
   return (
     <section className="mx-auto max-w-3xl px-5 py-16 lg:py-24">
-      <div className="text-center">
+      <Reveal className="text-center">
         <Eyebrow className="justify-center">FAQ</Eyebrow>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
           Questions, answered
         </h2>
-      </div>
-      <div className="mt-10 divide-y divide-line border-y border-line">
+      </Reveal>
+      <Reveal stagger className="mt-10 divide-y divide-line border-y border-line">
         {FAQS.map((f) => (
           <details key={f.q} className="group py-5">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-semibold">
@@ -602,7 +603,7 @@ function FAQ() {
             <p className="mt-3 text-sm leading-relaxed text-muted">{f.a}</p>
           </details>
         ))}
-      </div>
+      </Reveal>
     </section>
   );
 }
@@ -612,7 +613,7 @@ function FAQ() {
 function FinalCTA() {
   return (
     <section className="mx-auto max-w-6xl px-5 pb-20">
-      <div className="overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-700 to-primary-900 px-8 py-14 text-center text-white sm:px-12 lg:py-20">
+      <Reveal className="overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-700 to-primary-900 px-8 py-14 text-center text-white sm:px-12 lg:py-20">
         <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">
           Put your WhatsApp to work.
         </h2>
@@ -638,7 +639,7 @@ function FinalCTA() {
         <p className="mt-5 flex items-center justify-center gap-1.5 text-sm text-primary-100/75">
           <Clock className="size-4" /> Live in about 10 minutes
         </p>
-      </div>
+      </Reveal>
     </section>
   );
 }

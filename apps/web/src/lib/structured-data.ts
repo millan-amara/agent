@@ -8,7 +8,7 @@ import { SITE, absoluteUrl } from "./site";
 const ORG_ID = `${SITE.url}/#organization`;
 const WEBSITE_ID = `${SITE.url}/#website`;
 
-/** The publisher of everything — rendered on every page from the root layout. */
+/** The publisher of everything, rendered on every page from the root layout. */
 export const organizationSchema = {
   "@type": "Organization",
   "@id": ORG_ID,
@@ -31,7 +31,7 @@ export const organizationSchema = {
   },
 };
 
-/** The website entity — rendered on every page from the root layout. */
+/** The website entity, rendered on every page from the root layout. */
 export const websiteSchema = {
   "@type": "WebSite",
   "@id": WEBSITE_ID,
@@ -52,7 +52,7 @@ const PLANS = [
 /**
  * The product itself, as a SaaS SoftwareApplication with the three plans as an
  * AggregateOffer (KES). No aggregateRating/review is included because none is
- * real — Google requires those to be genuine, on-site, and verifiable.
+ * real. Google requires those to be genuine, on-site, and verifiable.
  */
 export const softwareApplicationSchema = {
   "@type": "SoftwareApplication",

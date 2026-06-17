@@ -13,10 +13,11 @@ import { buttonStyles } from "@/components/ui/Button";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { JsonLd } from "@/components/JsonLd";
+import { Reveal } from "@/components/Reveal";
 import { breadcrumbSchema } from "@/lib/structured-data";
 
 const ABOUT_DESCRIPTION =
-  "We're building the operating system for WhatsApp-first businesses — helping small and growing teams respond faster, sell better, and stay in control.";
+  "We're building the operating system for WhatsApp-first businesses, helping small and growing teams respond faster, sell better, and stay in control.";
 
 export const metadata: Metadata = {
   title: "About",
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/about" },
   openGraph: {
     url: "/about",
-    title: "About — Azayon",
+    title: "About Azayon",
     description: ABOUT_DESCRIPTION,
   },
 };
@@ -33,7 +34,7 @@ const VALUES: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: Wand2,
     title: "Practical automation",
-    body: "Automate the busywork that actually slows businesses down — not novelty for its own sake.",
+    body: "Automate the busywork that actually slows businesses down, not novelty for its own sake.",
   },
   {
     icon: UserCheck,
@@ -43,7 +44,7 @@ const VALUES: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: MapPin,
     title: "Local business realities",
-    body: "KES pricing, M-Pesa, WhatsApp-first — built around how business is really done here.",
+    body: "KES pricing, M-Pesa, WhatsApp-first, built around how business is really done here.",
   },
   {
     icon: Tag,
@@ -70,13 +71,13 @@ export default function AboutPage() {
       <main>
         {/* Hero */}
         <section className="mx-auto max-w-3xl px-5 py-16 text-center lg:py-24">
-          <span className="text-xs font-semibold uppercase tracking-wide text-primary-600">
+          <span className="az-fade-up inline-block text-xs font-semibold uppercase tracking-wide text-primary-600">
             About Azayon
           </span>
-          <h1 className="mt-3 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+          <h1 className="az-fade-up az-delay-1 mt-3 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
             We&apos;re building the operating system for WhatsApp-first businesses.
           </h1>
-          <p className="mt-5 text-lg leading-relaxed text-muted">
+          <p className="az-fade-up az-delay-2 mt-5 text-lg leading-relaxed text-muted">
             Most business software is built around email, CRMs, and dashboards. But a huge number of
             businesses already sell, book, and get paid in one place: WhatsApp. Azayon is built for
             them.
@@ -85,7 +86,7 @@ export default function AboutPage() {
 
         {/* Story */}
         <section className="border-y border-line bg-surface">
-          <div className="mx-auto max-w-3xl px-5 py-16 lg:py-20">
+          <Reveal className="mx-auto max-w-3xl px-5 py-16 lg:py-20">
             <h2 className="text-2xl font-semibold tracking-tight">The story</h2>
             <div className="mt-5 space-y-4 text-[15px] leading-relaxed text-ink/80">
               <p>
@@ -94,36 +95,38 @@ export default function AboutPage() {
                 payments. It&apos;s where business actually happens.
               </p>
               <p>
-                But the tools meant to help — CRMs, booking apps, invoicing software — are built for a
+                But the tools meant to help (CRMs, booking apps, invoicing software) are built for a
                 different way of working. They assume email threads and web forms, not chat. So owners
                 end up juggling a phone in one hand and three apps in the other, and leads slip through
                 the cracks after hours.
               </p>
               <p>
                 Azayon closes that gap. It answers WhatsApp instantly, qualifies leads, books
-                appointments, sends invoices, and follows up on payments — while keeping the owner in
+                appointments, sends invoices, and follows up on payments, while keeping the owner in
                 control of anything that matters. The goal is simple: let a small team run like a much
                 bigger one, without leaving the app their customers already use.
               </p>
             </div>
-          </div>
+          </Reveal>
         </section>
 
         {/* Mission */}
         <section className="mx-auto max-w-3xl px-5 py-16 text-center lg:py-20">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-primary-600">
-            Our mission
-          </h2>
-          <p className="mt-4 text-2xl font-semibold leading-snug tracking-tight sm:text-3xl">
-            Help small and growing teams respond faster, sell better, and stay in control.
-          </p>
+          <Reveal>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-primary-600">
+              Our mission
+            </h2>
+            <p className="mt-4 text-2xl font-semibold leading-snug tracking-tight sm:text-3xl">
+              Help small and growing teams respond faster, sell better, and stay in control.
+            </p>
+          </Reveal>
         </section>
 
         {/* Values */}
         <section className="border-t border-line bg-surface">
           <div className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
             <h2 className="text-2xl font-semibold tracking-tight">What we believe</h2>
-            <div className="mt-10 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+            <Reveal stagger className="mt-10 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
               {VALUES.map((v) => (
                 <div key={v.title} className="flex gap-3.5">
                   <span className="grid size-10 shrink-0 place-items-center rounded-card bg-primary-soft text-primary-700">
@@ -135,13 +138,13 @@ export default function AboutPage() {
                   </div>
                 </div>
               ))}
-            </div>
+            </Reveal>
           </div>
         </section>
 
         {/* CTA band */}
         <section className="mx-auto max-w-6xl px-5 py-16 lg:py-24">
-          <div className="overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-700 to-primary-900 px-8 py-14 text-center text-white sm:px-12">
+          <Reveal className="overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-700 to-primary-900 px-8 py-14 text-center text-white sm:px-12">
             <h2 className="mx-auto max-w-2xl text-3xl font-semibold tracking-tight">
               Built for businesses that run on WhatsApp.
             </h2>
@@ -155,7 +158,7 @@ export default function AboutPage() {
               Start free trial
               <ArrowRight className="size-[18px]" />
             </Link>
-          </div>
+          </Reveal>
         </section>
       </main>
       <MarketingFooter />

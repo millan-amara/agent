@@ -10,7 +10,7 @@ export const SITE = {
   url: (process.env.NEXT_PUBLIC_SITE_URL || "https://azayon.com").replace(/\/+$/, ""),
   tagline: "Your WhatsApp, answered. Leads booked. Payments followed up.",
   description:
-    "Azayon is the AI front desk for WhatsApp-first businesses — reply instantly, qualify leads, book appointments, send invoices, and collect M-Pesa or card payments, all from WhatsApp.",
+    "Azayon is the AI front desk for WhatsApp-first businesses: reply instantly, qualify leads, book appointments, send invoices, and collect M-Pesa or card payments, all from WhatsApp.",
   email: "hello@azayon.com",
   locale: "en_KE",
   /** Used for OpenGraph locale and Organization area served. */
