@@ -12,11 +12,21 @@ import {
 import { buttonStyles } from "@/components/ui/Button";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
+import { JsonLd } from "@/components/JsonLd";
+import { breadcrumbSchema } from "@/lib/structured-data";
+
+const ABOUT_DESCRIPTION =
+  "We're building the operating system for WhatsApp-first businesses — helping small and growing teams respond faster, sell better, and stay in control.";
 
 export const metadata: Metadata = {
-  title: "About — Azayon",
-  description:
-    "We're building the operating system for WhatsApp-first businesses — helping small and growing teams respond faster, sell better, and stay in control.",
+  title: "About",
+  description: ABOUT_DESCRIPTION,
+  alternates: { canonical: "/about" },
+  openGraph: {
+    url: "/about",
+    title: "About — Azayon",
+    description: ABOUT_DESCRIPTION,
+  },
 };
 
 const VALUES: { icon: LucideIcon; title: string; body: string }[] = [
@@ -50,6 +60,12 @@ const VALUES: { icon: LucideIcon; title: string; body: string }[] = [
 export default function AboutPage() {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
+      <JsonLd
+        schema={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "About", path: "/about" },
+        ])}
+      />
       <MarketingHeader />
       <main>
         {/* Hero */}

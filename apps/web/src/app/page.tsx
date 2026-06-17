@@ -23,16 +23,55 @@ import {
 import { buttonStyles } from "@/components/ui/Button";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
+import { JsonLd } from "@/components/JsonLd";
+import { softwareApplicationSchema, faqSchema } from "@/lib/structured-data";
+
+const HOME_DESCRIPTION =
+  "Azayon helps businesses reply instantly, qualify customers, book appointments, send invoices, and collect payments from WhatsApp — even when your team is busy.";
 
 export const metadata: Metadata = {
-  title: "Azayon — Your WhatsApp, answered. Leads booked. Payments followed up.",
-  description:
-    "Azayon helps businesses reply instantly, qualify customers, book appointments, send invoices, and collect payments from WhatsApp — even when your team is busy.",
+  // Absolute so the brand line isn't suffixed with the "· Azayon" template.
+  title: { absolute: "Azayon — Your WhatsApp, answered. Leads booked. Payments followed up." },
+  description: HOME_DESCRIPTION,
+  alternates: { canonical: "/" },
+  openGraph: {
+    url: "/",
+    title: "Azayon — Your WhatsApp, answered. Leads booked. Payments followed up.",
+    description: HOME_DESCRIPTION,
+  },
 };
+
+const FAQS = [
+  {
+    q: "Do I need a WhatsApp Business account?",
+    a: "Yes — Azayon connects through the official WhatsApp Business API. We guide you through linking it during setup, and you can test everything before you connect.",
+  },
+  {
+    q: "Can I test the AI before connecting WhatsApp?",
+    a: "Absolutely. The built-in simulator lets you chat with your AI exactly as a customer would, so you can tune its answers before anyone messages you.",
+  },
+  {
+    q: "Does Azayon support M-Pesa?",
+    a: "Yes. Payment links work with M-Pesa and cards, so customers can pay invoices and deposits straight from the chat.",
+  },
+  {
+    q: "Can a human take over a conversation?",
+    a: "Any time. Replying manually pauses the AI on that conversation, and the AI also escalates to your team whenever it's unsure or a human is needed.",
+  },
+  {
+    q: "What happens if the AI is unsure?",
+    a: "It escalates instead of guessing. The conversation is flagged as needing a human so nothing sensitive goes out without your team.",
+  },
+  {
+    q: "Is there a free trial, and can I cancel anytime?",
+    a: "Every plan starts with a 14-day free trial, no card required. You can upgrade, downgrade, or cancel whenever you like.",
+  },
+];
 
 export default function LandingPage() {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
+      <JsonLd schema={[softwareApplicationSchema, faqSchema(FAQS)]} />
       <MarketingHeader />
       <main>
         <Hero />
@@ -543,32 +582,6 @@ function Pricing() {
 /* ------------------------------------------------------------------- FAQ */
 
 function FAQ() {
-  const faqs = [
-    {
-      q: "Do I need a WhatsApp Business account?",
-      a: "Yes — Azayon connects through the official WhatsApp Business API. We guide you through linking it during setup, and you can test everything before you connect.",
-    },
-    {
-      q: "Can I test the AI before connecting WhatsApp?",
-      a: "Absolutely. The built-in simulator lets you chat with your AI exactly as a customer would, so you can tune its answers before anyone messages you.",
-    },
-    {
-      q: "Does Azayon support M-Pesa?",
-      a: "Yes. Payment links work with M-Pesa and cards, so customers can pay invoices and deposits straight from the chat.",
-    },
-    {
-      q: "Can a human take over a conversation?",
-      a: "Any time. Replying manually pauses the AI on that conversation, and the AI also escalates to your team whenever it's unsure or a human is needed.",
-    },
-    {
-      q: "What happens if the AI is unsure?",
-      a: "It escalates instead of guessing. The conversation is flagged as needing a human so nothing sensitive goes out without your team.",
-    },
-    {
-      q: "Is there a free trial, and can I cancel anytime?",
-      a: "Every plan starts with a 14-day free trial, no card required. You can upgrade, downgrade, or cancel whenever you like.",
-    },
-  ];
   return (
     <section className="mx-auto max-w-3xl px-5 py-16 lg:py-24">
       <div className="text-center">
@@ -578,7 +591,7 @@ function FAQ() {
         </h2>
       </div>
       <div className="mt-10 divide-y divide-line border-y border-line">
-        {faqs.map((f) => (
+        {FAQS.map((f) => (
           <details key={f.q} className="group py-5">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-semibold">
               {f.q}

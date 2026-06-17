@@ -4,11 +4,21 @@ import { ArrowRight, Check, Minus } from "lucide-react";
 import { buttonStyles } from "@/components/ui/Button";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
+import { JsonLd } from "@/components/JsonLd";
+import { softwareApplicationSchema, faqSchema, breadcrumbSchema } from "@/lib/structured-data";
+
+const PRICING_DESCRIPTION =
+  "Simple KES pricing for WhatsApp-first businesses. Every plan includes the full toolkit — AI replies, inbox, bookings, invoices, payments, and broadcasts. 14-day free trial.";
 
 export const metadata: Metadata = {
-  title: "Pricing — Azayon",
-  description:
-    "Simple KES pricing for WhatsApp-first businesses. Every plan includes the full toolkit — AI replies, inbox, bookings, invoices, payments, and broadcasts. 14-day free trial.",
+  title: "Pricing",
+  description: PRICING_DESCRIPTION,
+  alternates: { canonical: "/pricing" },
+  openGraph: {
+    url: "/pricing",
+    title: "Pricing — Azayon",
+    description: PRICING_DESCRIPTION,
+  },
 };
 
 const PLANS = [
@@ -116,6 +126,16 @@ const FAQS = [
 export default function PricingPage() {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
+      <JsonLd
+        schema={[
+          softwareApplicationSchema,
+          faqSchema(FAQS),
+          breadcrumbSchema([
+            { name: "Home", path: "/" },
+            { name: "Pricing", path: "/pricing" },
+          ]),
+        ]}
+      />
       <MarketingHeader />
       <main>
         {/* Hero */}

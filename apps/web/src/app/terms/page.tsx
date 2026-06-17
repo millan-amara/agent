@@ -1,15 +1,31 @@
 import type { Metadata } from "next";
 import { LegalShell } from "@/components/marketing/LegalShell";
+import { JsonLd } from "@/components/JsonLd";
+import { breadcrumbSchema } from "@/lib/structured-data";
+
+const TERMS_DESCRIPTION =
+  "The terms that govern your use of Azayon, operated by Peskaya Limited (Kenya) — accounts, plans, payments, acceptable use, and your responsibilities.";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — Azayon",
-  description:
-    "The terms that govern your use of Azayon, operated by Peskaya Limited (Kenya) — accounts, plans, payments, acceptable use, and your responsibilities.",
+  title: "Terms of Service",
+  description: TERMS_DESCRIPTION,
+  alternates: { canonical: "/terms" },
+  openGraph: {
+    url: "/terms",
+    title: "Terms of Service — Azayon",
+    description: TERMS_DESCRIPTION,
+  },
 };
 
 export default function TermsPage() {
   return (
     <LegalShell title="Terms of Service" updated="15 June 2026">
+      <JsonLd
+        schema={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Terms of Service", path: "/terms" },
+        ])}
+      />
       <p>
         These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of Azayon
         (&ldquo;Azayon&rdquo;, the &ldquo;Service&rdquo;), operated by <strong>Peskaya Limited</strong>

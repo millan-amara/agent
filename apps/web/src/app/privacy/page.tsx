@@ -1,15 +1,31 @@
 import type { Metadata } from "next";
 import { LegalShell } from "@/components/marketing/LegalShell";
+import { JsonLd } from "@/components/JsonLd";
+import { breadcrumbSchema } from "@/lib/structured-data";
+
+const PRIVACY_DESCRIPTION =
+  "How Azayon (Peskaya Limited) collects, uses, and protects your personal data and your customers' data. Aligned with the Kenya Data Protection Act, 2019.";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Azayon",
-  description:
-    "How Azayon (Peskaya Limited) collects, uses, and protects your personal data and your customers' data. Aligned with the Kenya Data Protection Act, 2019.",
+  title: "Privacy Policy",
+  description: PRIVACY_DESCRIPTION,
+  alternates: { canonical: "/privacy" },
+  openGraph: {
+    url: "/privacy",
+    title: "Privacy Policy — Azayon",
+    description: PRIVACY_DESCRIPTION,
+  },
 };
 
 export default function PrivacyPage() {
   return (
     <LegalShell title="Privacy Policy" updated="15 June 2026">
+      <JsonLd
+        schema={breadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Privacy Policy", path: "/privacy" },
+        ])}
+      />
       <p>
         Azayon (&ldquo;Azayon&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is
         operated by <strong>Peskaya Limited</strong>, a company registered in Kenya. Azayon is a
