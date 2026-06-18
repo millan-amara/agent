@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LogoFull } from "@/components/Logo";
+import { SITE } from "@/lib/site";
 
 const COLUMNS = [
   {
@@ -64,7 +65,10 @@ export function MarketingFooter() {
         </div>
 
         <div className="mt-12 flex flex-col gap-2 border-t border-white/10 pt-6 text-xs text-primary-100/70 sm:flex-row sm:items-center sm:justify-between">
-          <p>© 2026 Azayon. Built for businesses that run on WhatsApp.</p>
+          <p>
+            © 2026 {SITE.name} — a product of {SITE.legalName}. Built for businesses
+            that run on WhatsApp.
+          </p>
           <p>KES pricing · M-Pesa &amp; card payments</p>
         </div>
       </div>
