@@ -73,28 +73,35 @@ export function EmbeddedSignup({ onConnected }: { onConnected: (label: string) =
     setBusy(true);
     window.FB.login(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (response: any) => {
-        const code = response?.authResponse?.code;
-        const { phoneNumberId, wabaId } = sessionInfo.current;
-        if (!code || !phoneNumberId || !wabaId) {
-          setBusy(false);
-          setError("Signup was cancelled or didn't return a number. Try again or use manual setup.");
-          return;
-        }
-        try {
-          const res = await api.connectWhatsAppEmbedded({ code, phoneNumberId, wabaId });
-          onConnected(`${res.name} (${res.number})`);
-        } catch (err) {
-          setError((err as Error).message);
-        } finally {
-          setBusy(false);
-        }
+      (response: any) => {
+        // FB.login rejects an async callback ("asyncfunction, not function"),
+        // so the callback stays sync and the async work runs in an IIFE.
+        void (async () => {
+          const code = response?.authResponse?.code;
+          const { phoneNumberId, wabaId } = sessionInfo.current;
+          if (!code || !phoneNumberId || !wabaId) {
+            setBusy(false);
+            setError("Signup was cancelled or didn't return a number. Try again or use manual setup.");
+            return;
+          }
+          try {
+            const res = await api.connectWhatsAppEmbedded({ code, phoneNumberId, wabaId });
+            onConnected(`${res.name} (${res.number})`);
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        })();
       },
       {
         config_id: CONFIG_ID,
         response_type: "code",
         override_default_response_type: true,
-        extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
+        // Coexistence flow: onboard a number already on the WhatsApp Business app
+        // (keeps the app live alongside the Cloud API). The old "coexistence"
+        // value is deprecated — Meta requires "whatsapp_business_app_onboarding".
+        extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
       },
     );
   };

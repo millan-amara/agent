@@ -253,15 +253,20 @@ export function verifyPaystackSignature(raw: Buffer, signature: string, secretKe
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** Handles a verified charge.success event. Returns the updated invoice or null. */
-export async function markInvoicePaid(reference: string) {
+/**
+ * Handles a verified charge.success event. `channel` is Paystack's settlement
+ * channel (e.g. "mobile_money", "card") from the event payload — stored for the
+ * M-Pesa-vs-card mix, which can't be reconstructed after the fact. Returns the
+ * updated invoice or null.
+ */
+export async function markInvoicePaid(reference: string, channel?: string | null) {
   // Atomic guard: only the first redelivery of charge.success flips paid and
   // posts the receipt. Paystack retries webhooks, so a plain read-then-write
   // could double-post. updateMany with a status guard makes the transition
   // win-once — count === 0 means another delivery already handled it.
   const flip = await db.invoice.updateMany({
     where: { paystackRef: reference, status: { not: "paid" } },
-    data: { status: "paid", paidAt: new Date() },
+    data: { status: "paid", paidAt: new Date(), paymentMethod: channel ?? null },
   });
   if (flip.count === 0) return null;
   const updated = await db.invoice.findUnique({ where: { paystackRef: reference } });

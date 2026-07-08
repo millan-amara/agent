@@ -148,6 +148,11 @@ model Invoice {
   // When the invoice was issued/sent to the customer (null while draft).
   issuedAt    DateTime?
   paidAt      DateTime?
+  // Paystack channel that settled the payment, captured from charge.success
+  // (e.g. "mobile_money" for M-Pesa, "card"). Null until paid / for offline
+  // payments. Can't be backfilled, so we record it at settlement time — the
+  // M-Pesa-vs-card mix drives the wholesale-rate economics later.
+  paymentMethod String?
   createdAt   DateTime  @default(now())
 
   tenant  Tenant        @relation(fields: [tenantId], references: [id])

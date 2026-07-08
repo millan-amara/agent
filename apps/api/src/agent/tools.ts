@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Contact, Tenant } from "@prisma/client";
+import { config } from "../config.js";
 import { db } from "../db.js";
 import { publish } from "../events.js";
 import { computeAvailableSlots, formatSlot, parseBookingConfig } from "../booking.js";
 import { createPaymentLink, createPendingInvoice, PaystackError } from "../paystack.js";
 import { hasKnowledgeBase, searchKb } from "../kb.js";
-import { pushEvent } from "../google.js";
+import { deleteEvent, pushEvent } from "../google.js";
 
 export interface ToolContext {
   tenant: Tenant;
@@ -79,6 +80,51 @@ export function buildTools(stages: string[], caps: TenantCapabilities): Anthropi
           required: ["start_iso"],
         },
       },
+      {
+        name: "get_customer_appointments",
+        description:
+          "Look up THIS customer's own upcoming appointments. Call this when they ask about a " +
+          "booking they already have (e.g. 'when is my appointment?', 'am I booked in?'), and " +
+          "before rescheduling or cancelling. Returns only this customer's appointments.",
+        input_schema: { type: "object", properties: {} },
+      },
+      {
+        name: "reschedule_appointment",
+        description:
+          "Move THIS customer's existing appointment to a new time. Call get_customer_appointments " +
+          "first for the current appointment's ISO time, and get_available_slots for valid new times. " +
+          "Only reschedule after the customer confirms the new time.",
+        input_schema: {
+          type: "object",
+          properties: {
+            current_start_iso: {
+              type: "string",
+              description: "The existing appointment's ISO timestamp, from get_customer_appointments",
+            },
+            new_start_iso: {
+              type: "string",
+              description: "The chosen new slot's ISO timestamp, from get_available_slots",
+            },
+          },
+          required: ["current_start_iso", "new_start_iso"],
+        },
+      },
+      {
+        name: "cancel_appointment",
+        description:
+          "Cancel THIS customer's existing appointment. Call get_customer_appointments first for its " +
+          "ISO time. Only cancel after the customer clearly asks to.",
+        input_schema: {
+          type: "object",
+          properties: {
+            start_iso: {
+              type: "string",
+              description: "The appointment's ISO timestamp, from get_customer_appointments",
+            },
+          },
+          required: ["start_iso"],
+        },
+      },
     );
   }
   if (caps.kb) {
@@ -111,6 +157,31 @@ export function buildTools(stages: string[], caps: TenantCapabilities): Anthropi
           description: { type: "string", description: "What the payment is for" },
         },
         required: ["amount_kes", "description"],
+      },
+    });
+    tools.push({
+      name: "check_payment_status",
+      description:
+        "Look up THIS customer's own invoices and whether they have been paid. Call this when they " +
+        "ask about a payment they made or owe (e.g. 'did my payment go through?', 'what do I owe?'). " +
+        "Returns only this customer's invoices — never anyone else's.",
+      input_schema: { type: "object", properties: {} },
+    });
+    tools.push({
+      name: "resend_invoice",
+      description:
+        "Re-send THIS customer's existing unpaid invoice link to them. Use when they ask for their " +
+        "invoice or payment link again. Defaults to their most recent unpaid invoice; pass " +
+        "invoice_number for a specific one. Does NOT create a new charge — use create_invoice for that.",
+      input_schema: {
+        type: "object",
+        properties: {
+          invoice_number: {
+            type: "integer",
+            description:
+              "Optional: the invoice number (e.g. 42 for INV-0042). Omit for the most recent unpaid invoice.",
+          },
+        },
       },
     });
   }
@@ -333,6 +404,144 @@ export async function executeTool(
       }
       await logEvent(ctx, `Appointment booked: ${formatSlot(slot.startsAt)}`);
       return `Booked for ${formatSlot(slot.startsAt)}. Confirm this to the customer.`;
+    }
+    case "get_customer_appointments": {
+      // Strictly scoped to the current contact — the agent must never surface
+      // another customer's bookings. Upcoming, still-booked appointments only.
+      const appointments = await db.appointment.findMany({
+        where: { tenantId: ctx.tenant.id, contactId: ctx.contact.id, status: "booked" },
+        orderBy: { startsAt: "asc" },
+      });
+      const upcoming = appointments.filter((a) => a.startsAt.getTime() >= Date.now());
+      if (upcoming.length === 0) {
+        return "This customer has no upcoming appointments on record. If they expected one, offer to book a new slot or escalate.";
+      }
+      const lines = upcoming.map(
+        (a) => `- ${formatSlot(a.startsAt)} [${a.startsAt.toISOString()}]${a.note ? ` (${a.note})` : ""}`,
+      );
+      return `This customer's upcoming appointments (use the ISO value in brackets to reschedule or cancel):\n${lines.join(
+        "\n",
+      )}`;
+    }
+    case "reschedule_appointment": {
+      const fromStart = new Date(String(input.current_start_iso ?? ""));
+      const toStart = new Date(String(input.new_start_iso ?? ""));
+      if (Number.isNaN(fromStart.getTime()) || Number.isNaN(toStart.getTime())) {
+        return "Error: both current_start_iso and new_start_iso must be valid timestamps (from get_customer_appointments and get_available_slots).";
+      }
+      // Scoped to this contact — the agent can only move this customer's own booking.
+      const appt = await db.appointment.findFirst({
+        where: {
+          tenantId: ctx.tenant.id,
+          contactId: ctx.contact.id,
+          status: "booked",
+          startsAt: fromStart,
+        },
+      });
+      if (!appt) {
+        return "Error: no booked appointment found at that time for this customer. Call get_customer_appointments to see their actual bookings.";
+      }
+      // Re-validate the new slot against live availability, exactly as book_appointment does.
+      const slots = await computeAvailableSlots(ctx.tenant, 200);
+      const slot = slots.find((s) => s.startsAt.getTime() === toStart.getTime());
+      if (!slot) {
+        return "Error: that new slot is no longer available. Call get_available_slots again and offer fresh options.";
+      }
+      await db.appointment.update({
+        where: { id: appt.id },
+        data: { startsAt: slot.startsAt, endsAt: slot.endsAt },
+      });
+      // Re-sync Google Calendar (best-effort): drop the old event, create a fresh one.
+      if (appt.googleEventId) await deleteEvent(ctx.tenant, appt.googleEventId);
+      const eventId = await pushEvent(
+        ctx.tenant,
+        { startsAt: slot.startsAt, endsAt: slot.endsAt, note: appt.note },
+        ctx.contact.name ?? ctx.contact.phone,
+      ).catch(() => null);
+      await db.appointment.update({ where: { id: appt.id }, data: { googleEventId: eventId } });
+      await logEvent(ctx, `Appointment moved: ${formatSlot(appt.startsAt)} → ${formatSlot(slot.startsAt)}`);
+      return `Rescheduled to ${formatSlot(slot.startsAt)}. Confirm the new time with the customer.`;
+    }
+    case "cancel_appointment": {
+      const start = new Date(String(input.start_iso ?? ""));
+      if (Number.isNaN(start.getTime())) {
+        return "Error: start_iso must be a valid timestamp from get_customer_appointments.";
+      }
+      const appt = await db.appointment.findFirst({
+        where: {
+          tenantId: ctx.tenant.id,
+          contactId: ctx.contact.id,
+          status: "booked",
+          startsAt: start,
+        },
+      });
+      if (!appt) {
+        return "Error: no booked appointment found at that time for this customer. Call get_customer_appointments to see their actual bookings.";
+      }
+      await db.appointment.update({ where: { id: appt.id }, data: { status: "cancelled" } });
+      if (appt.googleEventId) await deleteEvent(ctx.tenant, appt.googleEventId);
+      await logEvent(ctx, `Appointment cancelled: ${formatSlot(appt.startsAt)}`);
+      return `Cancelled the ${formatSlot(appt.startsAt)} appointment. Confirm the cancellation with the customer.`;
+    }
+    case "check_payment_status": {
+      // Strictly scoped to the current contact. Hide internal-only states
+      // (draft, pending_approval) the customer shouldn't be told about.
+      const invoices = await db.invoice.findMany({
+        where: {
+          tenantId: ctx.tenant.id,
+          contactId: ctx.contact.id,
+          status: { in: ["pending", "paid", "failed", "cancelled"] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+      if (invoices.length === 0) {
+        return "This customer has no invoices on record. If they believe they paid, escalate to a human to check.";
+      }
+      const lines = invoices.map((i) => {
+        const kes = (i.amountCents / 100).toLocaleString();
+        const when =
+          i.status === "paid" && i.paidAt ? ` on ${i.paidAt.toLocaleDateString()}` : "";
+        return `- INV-${String(i.number).padStart(4, "0")}: KES ${kes} — ${i.description} — ${i.status}${when}`;
+      });
+      return `This customer's invoices (most recent first):\n${lines.join(
+        "\n",
+      )}\n\nReport the status plainly. Only "paid" means money was received; "pending" means awaiting payment.`;
+    }
+    case "resend_invoice": {
+      const ref = (n: number) => `INV-${String(n).padStart(4, "0")}`;
+      let invoice;
+      const raw = input.invoice_number;
+      if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+        const number = Number(raw);
+        if (!Number.isInteger(number)) return "Error: invoice_number must be a whole number.";
+        // Scoped to this contact — never resend another customer's invoice.
+        invoice = await db.invoice.findFirst({
+          where: { tenantId: ctx.tenant.id, contactId: ctx.contact.id, number },
+        });
+        if (!invoice) return "Error: no invoice with that number exists for this customer.";
+        if (invoice.status === "paid") {
+          return `${ref(invoice.number)} is already paid — reassure the customer it's settled, nothing more to pay.`;
+        }
+        if (invoice.status === "cancelled") {
+          return `${ref(invoice.number)} was cancelled. If they still need to pay, escalate or have a new invoice raised.`;
+        }
+        if (invoice.status === "draft" || invoice.status === "pending_approval") {
+          return "That invoice hasn't been issued yet. Tell the customer it's being prepared and the link will follow.";
+        }
+      } else {
+        // Default: the most recent issued-but-unpaid invoice.
+        invoice = await db.invoice.findFirst({
+          where: { tenantId: ctx.tenant.id, contactId: ctx.contact.id, status: "pending" },
+          orderBy: { createdAt: "desc" },
+        });
+        if (!invoice) {
+          return "This customer has no unpaid invoice to resend. If they expect one, escalate or raise a new invoice.";
+        }
+      }
+      const publicUrl = `${config.APP_BASE_URL}/i/${invoice.publicToken}`;
+      await logEvent(ctx, `Invoice ${ref(invoice.number)} link resent`);
+      return `Send the customer this invoice link (M-Pesa or card): ${publicUrl}`;
     }
     case "create_invoice": {
       const amount = Number(input.amount_kes);

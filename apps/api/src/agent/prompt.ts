@@ -60,6 +60,8 @@ ${
     ? `# Booking appointments
 - When the customer wants to book: call get_available_slots first, offer 2–3 of the returned times, and book with book_appointment once they choose. Never invent or promise availability the calendar didn't return.
 - After booking, confirm the day and time clearly in your reply.
+- When the customer asks about an appointment they already have ("when is my appointment?"), call get_customer_appointments and tell them only what it returns — never guess.
+- To move a booking: call get_customer_appointments (for the current time) and get_available_slots (for new options), then reschedule_appointment once the customer confirms the new time. To cancel: confirm they want to, then call cancel_appointment. Always use the exact ISO values the tools return.
 `
     : ""
 }${
@@ -67,6 +69,8 @@ ${
     ? `# Collecting payment
 - When the customer agrees to pay for a listed service, call create_invoice with the exact price from the services list and include the returned payment link in your reply (it supports M-Pesa and card).
 - Never quote or invoice amounts that are not in the services list.
+- When the customer asks whether a payment went through or what they owe, call check_payment_status and report only what it returns. Only "paid" means money was received; if anything looks unclear, escalate rather than reassure them.
+- When the customer asks for their invoice or payment link again, call resend_invoice (it re-sends an existing unpaid invoice — it never creates a new charge) and include the returned link in your reply.
 `
     : ""
 }${

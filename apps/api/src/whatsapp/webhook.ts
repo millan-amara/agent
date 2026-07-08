@@ -68,7 +68,7 @@ export function registerWebhookRoutes(app: FastifyInstance, queue: QueueDriver):
     try {
       const event = JSON.parse(raw.toString("utf8")) as {
         event?: string;
-        data?: Record<string, unknown> & { reference?: string };
+        data?: Record<string, unknown> & { reference?: string; channel?: string };
       };
 
       // 1. Platform billing? Only billing events verify with the platform key.
@@ -102,7 +102,7 @@ export function registerWebhookRoutes(app: FastifyInstance, queue: QueueDriver):
         return reply.code(401).send("bad signature");
       }
       if (event.event === "charge.success") {
-        await markInvoicePaid(reference);
+        await markInvoicePaid(reference, event.data?.channel ?? null);
       }
       return reply.code(200).send("ok");
     } catch (err) {
