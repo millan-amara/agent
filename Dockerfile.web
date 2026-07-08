@@ -10,9 +10,16 @@ COPY apps/web/package.json apps/web/package.json
 RUN npm ci
 
 FROM base AS build
-# The API origin is inlined into the client bundle at build time.
+# NEXT_PUBLIC_* values are inlined into the client bundle at build time, so they
+# must be present as ARGs during `next build` — not just at runtime. Railway (and
+# most platforms) passes service variables as build args to the matching ARG.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# Meta Embedded Signup: the WhatsApp connect button renders only when both are set.
+ARG NEXT_PUBLIC_META_APP_ID
+ENV NEXT_PUBLIC_META_APP_ID=${NEXT_PUBLIC_META_APP_ID}
+ARG NEXT_PUBLIC_META_CONFIG_ID
+ENV NEXT_PUBLIC_META_CONFIG_ID=${NEXT_PUBLIC_META_CONFIG_ID}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # This app ships no static assets, so apps/web/public may not exist. Ensure it
