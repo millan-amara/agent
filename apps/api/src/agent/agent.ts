@@ -5,7 +5,7 @@ import { publish } from "../events.js";
 import type { MessageSender } from "../whatsapp/sender.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { buildTools, executeTool, tenantCapabilities, type ToolContext } from "./tools.js";
-import { recordUsage } from "./usage.js";
+import { recordUsage, withinDailyReplyBudget } from "./usage.js";
 import { classifyTier, modelForTier } from "./router.js";
 import { billingStatus, canSend, monthStart } from "../billing.js";
 
@@ -16,13 +16,18 @@ const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, timeout: 60_000
 const MAX_TOOL_ITERATIONS = 8;
 const HISTORY_LIMIT = 40;
 
-// Abuse / cost guard. One hostile contact can amplify a flood of inbound
+// Abuse / cost guards. One hostile contact can amplify a flood of inbound
 // messages into many model calls (a router classification plus up to
-// MAX_TOOL_ITERATIONS reply calls per turn). When a single contact exceeds this
-// inbound volume in the window, hand off to a human — which pauses the AI for
-// that contact — instead of continuing to spend the tenant's token budget.
+// MAX_TOOL_ITERATIONS reply calls per turn), so we cap a single conversation on
+// two horizons and hand off to a human (which pauses the AI for that contact)
+// when either trips — instead of burning the tenant's token budget:
+//   - RATE_WINDOW: a fast burst (many messages in minutes).
+//   - DAY: a slow drip pacing just under the burst limit for hours. Counts our
+//     AI replies (≈ paid model turns), so batched bursts don't over-count.
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const MAX_INBOUND_PER_WINDOW = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_AI_REPLIES_PER_DAY = 50;
 
 /**
  * The core loop: load tenant + contact + history, ask Claude with CRM tools,
@@ -77,6 +82,14 @@ async function runAgentTurnInner(
   if (!canSend(billing.state)) return;
   if (billing.state === "over_limit" && contact.createdAt >= monthStart()) return;
 
+  // Tenant-wide daily cost circuit-breaker (tight during trial). Bounds total
+  // spend across ALL conversations, so spreading a flood over many contacts
+  // can't run up the bill either. Skip silently once exhausted.
+  if (!(await withinDailyReplyBudget(tenant))) {
+    console.log(`[budget] ${tenant.name}: daily AI reply budget reached — turn skipped`);
+    return;
+  }
+
   // Rebuild conversation history from the DB. Consecutive same-role messages
   // are allowed — the API merges them into one turn.
   const history = await db.message.findMany({
@@ -127,6 +140,24 @@ async function runAgentTurnInner(
     if (recentInbound > MAX_INBOUND_PER_WINDOW) {
       await executeTool(ctx, "escalate_to_human", {
         reason: "High message volume from this contact — AI paused for review",
+      });
+      return;
+    }
+
+    // Slow-drip guard: a contact pacing just under the burst limit can still
+    // rack up hundreds of model turns over a day. Cap the AI replies one
+    // conversation gets per rolling 24h and hand off past it.
+    const repliesLastDay = await db.message.count({
+      where: {
+        contactId,
+        direction: "out",
+        author: "ai",
+        createdAt: { gte: new Date(Date.now() - DAY_MS) },
+      },
+    });
+    if (repliesLastDay >= MAX_AI_REPLIES_PER_DAY) {
+      await executeTool(ctx, "escalate_to_human", {
+        reason: `Conversation reached the daily AI-reply limit (${MAX_AI_REPLIES_PER_DAY}/24h) — paused for a human to review`,
       });
       return;
     }

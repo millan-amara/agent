@@ -150,6 +150,63 @@ export interface FollowUpSettings {
   templateId: string;
 }
 
+export type DigestChannel = "auto" | "whatsapp" | "email";
+
+export interface DigestSettings {
+  enabled: boolean;
+  hour: number;
+  channel: DigestChannel;
+  ownerPhone: string;
+}
+
+export interface DigestData {
+  covers: string;
+  yesterday: {
+    handled: number;
+    newLeads: number;
+    booked: number;
+    followUpsSent: number;
+    paidKes: number;
+  };
+  outstanding: {
+    waitingForYou: number;
+    pendingApprovals: number;
+    overdueInvoices: { count: number; totalKes: number };
+    coldLeads: number;
+  };
+}
+
+export interface DigestPreview {
+  config: DigestSettings;
+  data: DigestData;
+  text: string;
+}
+
+export interface OwnerChatSettings {
+  enabled: boolean;
+  phone: string;
+}
+
+export interface PublicPageSettings {
+  enabled: boolean;
+  slug: string;
+  url: string;
+  waConnected: boolean;
+}
+
+export interface PublicBusiness {
+  name: string;
+  vertical: string;
+  description: string;
+  services: Array<{ name: string; price?: string }>;
+  faqs: Array<{ q: string; a: string }>;
+  hours: string;
+  logoUrl: string | null;
+  phone: string | null;
+  email: string | null;
+  waLink: string | null;
+}
+
 export interface MessageTemplate {
   id: string;
   name: string;
@@ -181,6 +238,7 @@ export interface BillingStatus {
   limit: number | null;
   trialEndsAt: string | null;
   planRenewsAt: string | null;
+  cancelAtPeriodEnd: boolean;
 }
 
 export interface PlanOption {
@@ -203,6 +261,9 @@ export interface TenantInfo {
   stages: string[];
   profile: BusinessProfile;
   followUps: FollowUpSettings;
+  digest: DigestSettings;
+  ownerChat: OwnerChatSettings;
+  publicPage: PublicPageSettings;
   booking: BookingSettings;
   paystackConfigured: boolean;
   paymentApproval: boolean;
@@ -371,6 +432,20 @@ export const api = {
     }),
   saveFollowUps: (body: FollowUpSettings) =>
     request<{ ok: true }>("/api/tenant/followups", { method: "PUT", body: JSON.stringify(body) }),
+  saveDigest: (body: DigestSettings) =>
+    request<{ ok: true }>("/api/tenant/digest", { method: "PUT", body: JSON.stringify(body) }),
+  previewDigest: () => request<DigestPreview>("/api/digest/preview"),
+  sendTestDigest: () =>
+    request<{ ok: true; channel: DigestChannel }>("/api/digest/test", { method: "POST" }),
+  saveOwnerChat: (body: OwnerChatSettings) =>
+    request<{ ok: true }>("/api/tenant/owner-chat", { method: "PUT", body: JSON.stringify(body) }),
+  savePublicPage: (body: { enabled: boolean; slug: string }) =>
+    request<{ ok: true; slug: string; url: string }>("/api/tenant/public", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  publicBusiness: (slug: string) =>
+    request<PublicBusiness>(`/api/public/business/${encodeURIComponent(slug)}`),
   saveBooking: (body: BookingSettings) =>
     request<{ ok: true }>("/api/tenant/booking", { method: "PUT", body: JSON.stringify(body) }),
   savePaystack: (secretKey: string) =>
@@ -449,6 +524,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ tier }),
     }),
+  cancelSubscription: () => request<{ ok: true }>("/api/billing/cancel", { method: "POST" }),
+  resumeSubscription: () => request<{ ok: true }>("/api/billing/resume", { method: "POST" }),
   // dev-only billing override (no-op in prod)
   devSetBilling: (body: { plan?: string; planTier?: string | null; trialEndsAt?: string | null }) =>
     request<{ ok: true }>("/api/billing/_dev_set", { method: "POST", body: JSON.stringify(body) }),

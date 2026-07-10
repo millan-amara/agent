@@ -61,7 +61,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         vertical: template.id,
         businessProfile: JSON.stringify(template.profile),
         stages: JSON.stringify(template.stages),
-        trialEndsAt: new Date(Date.now() + 14 * 86_400_000),
+        trialEndsAt: new Date(Date.now() + 7 * 86_400_000),
       },
     });
     const user = await db.user.create({

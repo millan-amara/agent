@@ -1,6 +1,6 @@
 import { db } from "./db.js";
 import { publish } from "./events.js";
-import { contactKey, type QueueDriver } from "./queue/queue.js";
+import { contactKey, ownerKey, type QueueDriver } from "./queue/queue.js";
 
 /**
  * Records an inbound customer message and queues an agent turn.
@@ -24,6 +24,18 @@ export async function handleInboundText(
   },
 ): Promise<void> {
   const tenant = await db.tenant.findUniqueOrThrow({ where: { id: args.tenantId } });
+
+  // Owner chat fork: a message from the owner's own number goes to the private
+  // read-only assistant, not the customer sales agent — and never becomes a lead.
+  if (
+    tenant.ownerChatEnabled &&
+    tenant.ownerPhone &&
+    args.phone.replace(/\D/g, "") === tenant.ownerPhone
+  ) {
+    await handleOwnerInbound(queue, args.tenantId, args.text, args.waMessageId);
+    return;
+  }
+
   const stages = JSON.parse(tenant.stages) as string[];
 
   const contact = await db.contact.upsert({
@@ -63,4 +75,26 @@ export async function handleInboundText(
 
   publish({ type: "message", tenantId: args.tenantId, contactId: contact.id });
   queue.enqueue(contactKey(args.tenantId, contact.id));
+}
+
+/**
+ * Records an owner's inbound message and queues an owner turn. Idempotent on
+ * waMessageId (Meta redelivers). The owner turn runs on the same debounced queue
+ * so rapid messages batch into one reply.
+ */
+async function handleOwnerInbound(
+  queue: QueueDriver,
+  tenantId: string,
+  text: string,
+  waMessageId?: string,
+): Promise<void> {
+  try {
+    await db.ownerMessage.create({ data: { tenantId, direction: "in", text, waMessageId } });
+  } catch (err: unknown) {
+    if (typeof err === "object" && err !== null && (err as { code?: string }).code === "P2002") {
+      return; // webhook redelivery — already recorded
+    }
+    throw err;
+  }
+  queue.enqueue(ownerKey(tenantId));
 }

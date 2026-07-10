@@ -2,9 +2,10 @@ import type { Tenant } from "@prisma/client";
 import { config } from "./config.js";
 import { db } from "./db.js";
 import { fetchWithTimeout } from "./http.js";
+import { sendEmail } from "./email.js";
 
 /**
- * Azayon subscription billing. Tenants get a 14-day full trial, then must
+ * Azayon subscription billing. Tenants get a 7-day full trial, then must
  * subscribe to a tier (metered by active conversations/month = a contact with
  * ≥1 inbound message that month). Over the tier limit → new conversations are
  * soft-blocked (existing keep working). Expired trial / past_due → read-only.
@@ -25,6 +26,14 @@ export interface PlanDef {
   planCode: string | undefined;
 }
 
+/**
+ * Conversation cap during the free trial. Keeps a trial from running an entire
+ * business for a week — once hit, the trial goes `over_limit` (same enforcement
+ * as a paid plan over its cap: the AI stops auto-replying to new-this-month
+ * contacts) until the tenant subscribes.
+ */
+export const TRIAL_CONV_LIMIT = 15;
+
 export const PLANS: Record<TierId, PlanDef> = {
   starter: { tier: "starter", name: "Starter", priceKes: 2_500, convLimit: 150, planCode: config.PAYSTACK_PLAN_STARTER },
   growth: { tier: "growth", name: "Growth", priceKes: 7_500, convLimit: 750, planCode: config.PAYSTACK_PLAN_GROWTH },
@@ -41,6 +50,7 @@ export interface BillingStatus {
   limit: number | null; // null during trial (no cap)
   trialEndsAt: Date | null;
   planRenewsAt: Date | null;
+  cancelAtPeriodEnd: boolean;
 }
 
 export function monthStart(): Date {
@@ -77,6 +87,7 @@ export async function billingStatus(tenant: Tenant): Promise<BillingStatus> {
       limit,
       trialEndsAt: tenant.trialEndsAt,
       planRenewsAt: tenant.planRenewsAt,
+      cancelAtPeriodEnd: tenant.cancelAtPeriodEnd,
     };
   }
 
@@ -84,14 +95,29 @@ export async function billingStatus(tenant: Tenant): Promise<BillingStatus> {
   // treat as on-trial, not expired. Only a past date ends the trial.
   const onTrial =
     tenant.plan === "trial" && (tenant.trialEndsAt === null || tenant.trialEndsAt > new Date());
+  if (onTrial) {
+    // The trial is full-featured but capped at TRIAL_CONV_LIMIT conversations
+    // this month; past the cap it behaves like an over-limit paid plan.
+    return {
+      state: conversationCount >= TRIAL_CONV_LIMIT ? "over_limit" : "trial",
+      plan: tenant.plan,
+      planTier: tier,
+      conversationCount,
+      limit: TRIAL_CONV_LIMIT,
+      trialEndsAt: tenant.trialEndsAt,
+      planRenewsAt: tenant.planRenewsAt,
+      cancelAtPeriodEnd: tenant.cancelAtPeriodEnd,
+    };
+  }
   return {
-    state: onTrial ? "trial" : "readonly",
+    state: "readonly",
     plan: tenant.plan,
     planTier: tier,
     conversationCount,
     limit: tier ? PLANS[tier]?.convLimit ?? null : null,
     trialEndsAt: tenant.trialEndsAt,
     planRenewsAt: tenant.planRenewsAt,
+    cancelAtPeriodEnd: tenant.cancelAtPeriodEnd,
   };
 }
 
@@ -139,4 +165,134 @@ export async function createSubscriptionCheckout(
     throw new Error(data.message ?? "Paystack rejected the subscription request.");
   }
   return data.data.authorization_url;
+}
+
+/** Authenticated call to the platform Paystack account. */
+async function paystackPlatform(
+  path: string,
+  method: "GET" | "POST" = "GET",
+  body?: unknown,
+): Promise<Record<string, unknown>> {
+  const res = await fetchWithTimeout(`${PAYSTACK}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${config.PAYSTACK_PLATFORM_SECRET}`,
+      "Content-Type": "application/json",
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = (await res.json()) as { status?: boolean; message?: string; data?: unknown };
+  if (!res.ok || data.status === false) {
+    throw new Error(data.message ?? "Paystack request failed.");
+  }
+  return (data.data ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * Disables a subscription on the platform account. Paystack's disable endpoint
+ * needs the subscription code AND its email_token, which we fetch first. Used by
+ * cancel and by plan-change (to retire the superseded subscription). No-op when
+ * platform billing isn't configured.
+ */
+export async function disableSubscription(code: string): Promise<void> {
+  if (!config.PAYSTACK_PLATFORM_SECRET || !code) return;
+  const sub = await paystackPlatform(`/subscription/${code}`);
+  const token = sub.email_token as string | undefined;
+  if (!token) throw new Error("Could not read subscription token from Paystack.");
+  await paystackPlatform("/subscription/disable", "POST", { code, token });
+}
+
+/** Re-enables a previously cancelled subscription. */
+export async function enableSubscription(code: string): Promise<void> {
+  if (!config.PAYSTACK_PLATFORM_SECRET || !code) return;
+  const sub = await paystackPlatform(`/subscription/${code}`);
+  const token = sub.email_token as string | undefined;
+  if (!token) throw new Error("Could not read subscription token from Paystack.");
+  await paystackPlatform("/subscription/enable", "POST", { code, token });
+}
+
+/** Owner email addresses for a tenant (falls back to the branding email). */
+async function ownerEmails(tenant: Tenant): Promise<string[]> {
+  const owners = await db.user.findMany({
+    where: { tenantId: tenant.id, role: "owner" },
+    select: { email: true },
+  });
+  const emails = owners.map((u) => u.email);
+  if (emails.length === 0 && tenant.businessEmail) emails.push(tenant.businessEmail);
+  return emails;
+}
+
+async function emailOwners(tenant: Tenant, subject: string, lines: string[]): Promise<void> {
+  const to = await ownerEmails(tenant);
+  if (to.length === 0) return;
+  const text = lines.join("\n");
+  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a">${lines
+    .map((l) => (l ? `<div>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</div>` : "<div>&nbsp;</div>"))
+    .join("")}</div>`;
+  await sendEmail({ to: to.join(", "), subject, html, text });
+}
+
+const HOURS_LEFT = (d: Date, now: Date) => Math.max(0, Math.round((d.getTime() - now.getTime()) / 3_600_000));
+
+/**
+ * Periodic billing housekeeping (runs on the worker tick):
+ *  - Emails the owner ~2 days before the trial ends, and once when it ends.
+ *  - Lapses cancelled subscriptions to past_due once the paid period is over.
+ * All steps are idempotent (timestamps / state transitions), so re-running is safe.
+ */
+export async function runBillingSweep(now: Date = new Date()): Promise<void> {
+  const soon = new Date(now.getTime() + 2 * 86_400_000);
+
+  // 1. Trial ending soon (within 48h, not yet notified).
+  const ending = await db.tenant.findMany({
+    where: {
+      plan: "trial",
+      trialEndsAt: { gt: now, lte: soon },
+      trialEndingNoticeSentAt: null,
+    },
+    take: 50,
+  });
+  for (const t of ending) {
+    const hrs = HOURS_LEFT(t.trialEndsAt!, now);
+    const when = hrs <= 24 ? `about ${hrs} hour${hrs === 1 ? "" : "s"}` : `${Math.round(hrs / 24)} days`;
+    await emailOwners(t, `Your ${t.name} free trial ends in ${when}`, [
+      `Hi ${t.name},`,
+      "",
+      `Your Azayon free trial ends in ${when}. To keep your AI replying to customers on WhatsApp after that, pick a plan — it takes a minute and there's no interruption.`,
+      "",
+      `Choose a plan: ${config.APP_BASE_URL}/billing`,
+      "",
+      "If you have any questions, just reply to this email.",
+    ]).catch((e) => console.error("[billing] trial-ending email failed:", e));
+    await db.tenant.update({ where: { id: t.id }, data: { trialEndingNoticeSentAt: now } });
+  }
+
+  // 2. Trial just ended (expired, not yet notified). plan still "trial" = not subscribed.
+  const ended = await db.tenant.findMany({
+    where: {
+      plan: "trial",
+      trialEndsAt: { lt: now },
+      trialEndedNoticeSentAt: null,
+    },
+    take: 50,
+  });
+  for (const t of ended) {
+    await emailOwners(t, `Your ${t.name} free trial has ended`, [
+      `Hi ${t.name},`,
+      "",
+      "Your Azayon free trial has ended, so your AI has paused replying to new WhatsApp messages. Your data, contacts and settings are all safe.",
+      "",
+      `Subscribe to switch it back on: ${config.APP_BASE_URL}/billing`,
+    ]).catch((e) => console.error("[billing] trial-ended email failed:", e));
+    await db.tenant.update({ where: { id: t.id }, data: { trialEndedNoticeSentAt: now } });
+  }
+
+  // 3. Lapse cancelled subscriptions once the paid period is over.
+  const lapsed = await db.tenant.findMany({
+    where: { plan: "active", cancelAtPeriodEnd: true, planRenewsAt: { lt: now } },
+    take: 50,
+  });
+  for (const t of lapsed) {
+    await db.tenant.update({ where: { id: t.id }, data: { plan: "past_due" } });
+  }
 }

@@ -140,6 +140,49 @@ export async function sendTemplateMessage(
   return data.messages?.[0]?.id ?? null;
 }
 
+/**
+ * Sends an approved template by name with explicit positional body parameters
+ * ({{1}}, {{2}}, …). Unlike sendTemplateMessage (which fills the two follow-up
+ * variables), this is for any approved template — e.g. the owner morning digest.
+ * Parameters must be single-line (Meta rejects newlines/tabs in body params).
+ */
+export async function sendTemplateByName(
+  tenant: Tenant,
+  toPhone: string,
+  name: string,
+  language: string,
+  bodyParams: string[],
+): Promise<string | null> {
+  const phoneNumberId = tenant.waPhoneNumberId ?? config.WA_PHONE_NUMBER_ID;
+  const token = tenantToken(tenant);
+  const res = await fetchWithTimeout(`${GRAPH}/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: toPhone,
+      type: "template",
+      template: {
+        name,
+        language: { code: language },
+        ...(bodyParams.length
+          ? {
+              components: [
+                { type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) },
+              ],
+            }
+          : {}),
+      },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Template send failed (${res.status}): ${body}`);
+  }
+  const data = (await res.json()) as { messages?: Array<{ id?: string }> };
+  return data.messages?.[0]?.id ?? null;
+}
+
 /** Renders the template body the way the customer will read it (for the timeline). */
 export function renderTemplate(template: Template, tenant: Tenant, contact: Contact): string {
   return template.body

@@ -5,9 +5,12 @@ import {
   api,
   type BookingSettings,
   type BusinessProfile,
+  type DigestSettings,
   type FollowUpSettings,
   type InvoiceBranding,
   type MessageTemplate,
+  type OwnerChatSettings,
+  type PublicPageSettings,
   type TenantInfo,
 } from "@/lib/api";
 import {
@@ -19,6 +22,8 @@ import {
   Users,
   ShieldCheck,
   CheckCircle2,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import { ProfileForm } from "@/components/ProfileForm";
 import { TemplateManager } from "@/components/TemplateManager";
@@ -59,6 +64,17 @@ export default function SettingsPage() {
   const [fuTemplates, setFuTemplates] = useState<MessageTemplate[]>([]);
   const [fuMsg, setFuMsg] = useState<string | null>(null);
 
+  const [digest, setDigest] = useState<DigestSettings | null>(null);
+  const [digestMsg, setDigestMsg] = useState<string | null>(null);
+  const [digestPreview, setDigestPreview] = useState<string | null>(null);
+  const [sendingTest, setSendingTest] = useState(false);
+
+  const [ownerChat, setOwnerChat] = useState<OwnerChatSettings | null>(null);
+  const [ownerChatMsg, setOwnerChatMsg] = useState<string | null>(null);
+
+  const [publicPage, setPublicPage] = useState<PublicPageSettings | null>(null);
+  const [publicMsg, setPublicMsg] = useState<string | null>(null);
+
   const [booking, setBooking] = useState<BookingSettings | null>(null);
   const [bookingMsg, setBookingMsg] = useState<string | null>(null);
   const [paystackKey, setPaystackKey] = useState("");
@@ -82,6 +98,9 @@ export default function SettingsPage() {
       .then((t) => {
         setTenant(t);
         setFollowUps(t.followUps);
+        setDigest(t.digest);
+        setOwnerChat(t.ownerChat);
+        setPublicPage(t.publicPage);
         setBooking(t.booking);
         setCap(t.compliance.dailyMessageCap?.toString() ?? "");
         setRetention(t.compliance.dataRetentionDays?.toString() ?? "");
@@ -228,6 +247,91 @@ export default function SettingsPage() {
 
               <Section title="Message templates">
                 <TemplateManager wabaConfigured={tenant.wabaConfigured} />
+              </Section>
+
+              <Section
+                title="Public page"
+                description="A simple public page for your business — your services, hours and a “Chat on WhatsApp” button that drops customers straight into your AI. Share the link anywhere: bio, posters, ads."
+              >
+                {publicMsg && <Notice className="mb-3">{publicMsg}</Notice>}
+                {publicPage && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setPublicMsg(null);
+                      setError(null);
+                      try {
+                        const res = await api.savePublicPage({
+                          enabled: publicPage.enabled,
+                          slug: publicPage.slug,
+                        });
+                        setPublicPage({ ...publicPage, slug: res.slug, url: res.url });
+                        setPublicMsg("Public page saved.");
+                      } catch (err) {
+                        setError((err as Error).message);
+                      }
+                    }}
+                    className="space-y-4"
+                  >
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary-700"
+                        checked={publicPage.enabled}
+                        onChange={(e) => setPublicPage({ ...publicPage, enabled: e.target.checked })}
+                      />
+                      <span className="font-medium">Publish my business page</span>
+                    </label>
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium">Page address</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm text-muted">/b/</span>
+                        <Input
+                          className="w-56"
+                          value={publicPage.slug}
+                          onChange={(e) => setPublicPage({ ...publicPage, slug: e.target.value })}
+                          placeholder="my-salon"
+                        />
+                      </div>
+                      <span className="mt-1 block text-xs text-muted">
+                        Letters and numbers. This becomes your shareable link.
+                      </span>
+                    </label>
+                    {!publicPage.waConnected && (
+                      <p className="rounded-card bg-attentionSoft px-3 py-2 text-xs text-attention">
+                        Connect WhatsApp above so the page’s “Chat” button can reach your AI.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="submit">Save public page</Button>
+                      {publicPage.url && publicPage.enabled && (
+                        <>
+                          <a
+                            href={publicPage.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={buttonStyles("secondary", "md")}
+                          >
+                            <ExternalLink className="size-4" /> View
+                          </a>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(publicPage.url);
+                              setPublicMsg("Link copied.");
+                            }}
+                          >
+                            <Copy className="size-4" /> Copy link
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {publicPage.url && publicPage.enabled && (
+                      <p className="break-all text-xs text-muted">{publicPage.url}</p>
+                    )}
+                  </form>
+                )}
               </Section>
             </>
           )}
@@ -447,6 +551,173 @@ export default function SettingsPage() {
                       )}
                     </label>
                     <Button type="submit">Save follow-up settings</Button>
+                  </form>
+                )}
+              </Section>
+
+              <Section
+                title="Chat with your business"
+                description="Message your own WhatsApp number and ask about leads, invoices, appointments and what needs you — a private assistant only you can reach. Read-only for now (it looks things up; it doesn't change anything yet)."
+              >
+                {ownerChatMsg && <Notice>{ownerChatMsg}</Notice>}
+                {ownerChat && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setOwnerChatMsg(null);
+                      setError(null);
+                      try {
+                        await api.saveOwnerChat(ownerChat);
+                        setOwnerChatMsg("Owner chat settings saved.");
+                      } catch (err) {
+                        setError((err as Error).message);
+                      }
+                    }}
+                    className="space-y-4"
+                  >
+                    <label className="block text-sm">
+                      <span className="mb-1 block font-medium">Your WhatsApp number</span>
+                      <Input
+                        className="tnum w-56"
+                        value={ownerChat.phone}
+                        onChange={(e) => setOwnerChat({ ...ownerChat, phone: e.target.value })}
+                        placeholder="2547…"
+                      />
+                      <span className="mt-1 block text-xs text-muted">
+                        Full international format. Used for owner chat and morning digest delivery.
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary-700"
+                        checked={ownerChat.enabled}
+                        onChange={(e) => setOwnerChat({ ...ownerChat, enabled: e.target.checked })}
+                      />
+                      <span className="font-medium">Let me message my business from this number</span>
+                    </label>
+                    <p className="text-xs text-muted">
+                      When on, messages from this number go to your private assistant instead of the customer
+                      sales AI — so it never books you as a lead. Ask things like “leads today”, “who owes me”,
+                      or “what’s on this week”.
+                    </p>
+                    <Button type="submit">Save owner chat</Button>
+                  </form>
+                )}
+              </Section>
+
+              <Section
+                title="Morning digest"
+                description="Your AI's daily report — what it handled yesterday and what still needs you today. Delivered every morning to WhatsApp (when your window is open) or email."
+              >
+                {digestMsg && <Notice>{digestMsg}</Notice>}
+                {digest && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setDigestMsg(null);
+                      setError(null);
+                      try {
+                        await api.saveDigest(digest);
+                        setDigestMsg("Digest settings saved.");
+                      } catch (err) {
+                        setError((err as Error).message);
+                      }
+                    }}
+                    className="space-y-4"
+                  >
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-primary-700"
+                        checked={digest.enabled}
+                        onChange={(e) => setDigest({ ...digest, enabled: e.target.checked })}
+                      />
+                      <span className="font-medium">Send me a morning digest</span>
+                    </label>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium">Send at (EAT)</span>
+                        <Select
+                          className="w-28"
+                          value={String(digest.hour)}
+                          onChange={(e) => setDigest({ ...digest, hour: Number(e.target.value) })}
+                        >
+                          {Array.from({ length: 24 }, (_, h) => (
+                            <option key={h} value={h}>
+                              {String(h).padStart(2, "0")}:00
+                            </option>
+                          ))}
+                        </Select>
+                      </label>
+                      <label className="block text-sm">
+                        <span className="mb-1 block font-medium">Deliver by</span>
+                        <Select
+                          className="w-56"
+                          value={digest.channel}
+                          onChange={(e) =>
+                            setDigest({ ...digest, channel: e.target.value as DigestSettings["channel"] })
+                          }
+                        >
+                          <option value="auto">WhatsApp if possible, else email</option>
+                          <option value="whatsapp">WhatsApp only</option>
+                          <option value="email">Email only</option>
+                        </Select>
+                      </label>
+                    </div>
+                    {digest.channel !== "email" && (
+                      <p className="text-xs text-muted">
+                        {ownerChat?.phone
+                          ? `Delivered to your WhatsApp number (${ownerChat.phone}), set under “Chat with your business” above. Falls back to email when your 24h window is closed and no digest template is approved.`
+                          : "Set your WhatsApp number under “Chat with your business” above to receive this on WhatsApp. Until then it’s emailed to you."}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="submit">Save digest settings</Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={async () => {
+                          setDigestMsg(null);
+                          setError(null);
+                          try {
+                            const res = await api.previewDigest();
+                            setDigestPreview(res.text);
+                          } catch (err) {
+                            setError((err as Error).message);
+                          }
+                        }}
+                      >
+                        Preview
+                      </Button>
+                      {tenant.role === "owner" && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={sendingTest}
+                          onClick={async () => {
+                            setDigestMsg(null);
+                            setError(null);
+                            setSendingTest(true);
+                            try {
+                              const res = await api.sendTestDigest();
+                              setDigestMsg(`Test digest sent by ${res.channel}.`);
+                            } catch (err) {
+                              setError((err as Error).message);
+                            } finally {
+                              setSendingTest(false);
+                            }
+                          }}
+                        >
+                          {sendingTest ? "Sending…" : "Send test now"}
+                        </Button>
+                      )}
+                    </div>
+                    {digestPreview && (
+                      <div className="mt-2 whitespace-pre-wrap rounded-card border border-line bg-canvas px-4 py-3 text-sm text-ink">
+                        {digestPreview}
+                      </div>
+                    )}
                   </form>
                 )}
               </Section>

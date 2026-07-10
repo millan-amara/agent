@@ -8,7 +8,7 @@ import type { QueueDriver } from "../queue/queue.js";
 import { handleInboundText } from "../inbound.js";
 import { markInvoicePaid, verifyPaystackSignature } from "../paystack.js";
 import { decryptSecret } from "../secrets.js";
-import { PLANS, type TierId } from "../billing.js";
+import { PLANS, disableSubscription, type TierId } from "../billing.js";
 import { audit } from "../audit.js";
 import { publish } from "../events.js";
 import { downloadMedia } from "./media.js";
@@ -345,10 +345,13 @@ async function handleBillingEvent(event: {
     const tier =
       (metadata?.tier as TierId | undefined) ?? (planCode ? PLAN_BY_CODE[planCode] : undefined);
     const nextPay = data.next_payment_date as string | undefined;
+    const prevCode = tenant.paystackSubscriptionCode;
     await db.tenant.update({
       where: { id: tenant.id },
       data: {
         plan: "active",
+        // A fresh activation clears any pending cancellation.
+        cancelAtPeriodEnd: false,
         ...(tier ? { planTier: tier } : {}),
         ...(subscriptionCode ? { paystackSubscriptionCode: subscriptionCode } : {}),
         ...(customerCode ? { paystackCustomerCode: customerCode } : {}),
@@ -356,13 +359,26 @@ async function handleBillingEvent(event: {
       },
     });
     await audit(tenant.id, null, "billing.activated", `${type} → ${tier ?? "active"}`);
-  } else if (
-    type === "invoice.payment_failed" ||
-    type === "subscription.disable" ||
-    type === "subscription.not_renew"
-  ) {
+    // Plan change: a new subscription supersedes the old one — retire it so the
+    // tenant isn't billed twice. Best-effort; the disable event for the old code
+    // is ignored below because it no longer matches the stored code.
+    if (prevCode && subscriptionCode && prevCode !== subscriptionCode) {
+      await disableSubscription(prevCode).catch((e) =>
+        console.error(`[billing] failed to retire old subscription ${prevCode}:`, e),
+      );
+    }
+  } else if (type === "invoice.payment_failed") {
     await db.tenant.update({ where: { id: tenant.id }, data: { plan: "past_due" } });
     await audit(tenant.id, null, "billing.past_due", type);
+  } else if (type === "subscription.disable" || type === "subscription.not_renew") {
+    // Ignore disable events for a superseded subscription (from a plan change).
+    if (subscriptionCode && tenant.paystackSubscriptionCode && subscriptionCode !== tenant.paystackSubscriptionCode) {
+      return;
+    }
+    // Cancellation stops renewal but access continues until the paid period ends;
+    // the billing sweep lapses it to past_due at planRenewsAt.
+    await db.tenant.update({ where: { id: tenant.id }, data: { cancelAtPeriodEnd: true } });
+    await audit(tenant.id, null, "billing.cancel_scheduled", type);
   }
 }
 

@@ -65,7 +65,7 @@ const FAQS = [
   },
   {
     q: "Is there a free trial, and can I cancel anytime?",
-    a: "Every plan starts with a 14-day free trial, no card required. You can upgrade, downgrade, or cancel whenever you like.",
+    a: "Every plan starts with a 7-day free trial, no card required. You can upgrade, downgrade, or cancel whenever you like.",
   },
 ];
 
@@ -122,7 +122,7 @@ function Hero() {
           </div>
           <p className="az-fade-up az-delay-4 mt-5 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-muted">
             <span className="flex items-center gap-1.5">
-              <Check className="size-4 text-primary-600" /> 14-day free trial
+              <Check className="size-4 text-primary-600" /> 7-day free trial
             </span>
             <span className="flex items-center gap-1.5">
               <Check className="size-4 text-primary-600" /> KES pricing
@@ -573,7 +573,7 @@ function Pricing() {
           ))}
         </Reveal>
         <p className="mt-8 text-center text-sm text-muted">
-          All plans include a 14-day free trial. No card required to start.
+          All plans include a 7-day free trial. No card required to start.
         </p>
       </div>
     </section>

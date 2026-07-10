@@ -29,6 +29,23 @@ model Tenant {
   waWabaId        String?
   // JSON: { enabled, delaysHours: number[], templateId } — auto no-reply sequences
   followUpConfig  String   @default("{}")
+  // Owner morning digest (JSON: { enabled, hour, channel }). hour is the KE-local
+  // hour (0-23) to send; channel = auto | whatsapp | email. The digest is the
+  // AI's daily "here's what I did / what needs you" report.
+  digestConfig    String   @default("{}")
+  // The owner's own WhatsApp number (digits only). Single source of truth for
+  // both digest delivery and owner chat. Legacy configs may still carry it in
+  // digestConfig.ownerPhone; deliverDigest falls back to that.
+  ownerPhone      String?
+  // Owner chat: when on, a message from ownerPhone to the business number is
+  // routed to the read-only owner assistant instead of the customer sales agent.
+  ownerChatEnabled Boolean @default(false)
+  // The business's dialable WhatsApp number (display_phone_number from Meta,
+  // digits only), captured on connect. Powers the public page's wa.me link.
+  waDisplayPhone  String?
+  // Public business page: opt-in mini-site at APP_BASE_URL/b/<slug>.
+  slug            String?  @unique
+  publicEnabled   Boolean  @default(false)
   // JSON: { enabled, slotMinutes, daysAhead, hours: {"1": {start,end}, ...} } (0=Sun..6=Sat)
   bookingConfig   String   @default("{}")
   // Tenant's own Paystack secret key — enables in-chat payment collection
@@ -59,6 +76,12 @@ model Tenant {
   paystackCustomerCode   String?
   paystackSubscriptionCode String?
   planRenewsAt           DateTime?
+  // Set when the owner cancels: subscription renewal is stopped on Paystack but
+  // access continues until planRenewsAt, when the lapse sweep flips to past_due.
+  cancelAtPeriodEnd      Boolean  @default(false)
+  // Trial-ending owner emails — timestamps so each fires at most once.
+  trialEndingNoticeSentAt DateTime?
+  trialEndedNoticeSentAt  DateTime?
   // Google Calendar sync (per-tenant OAuth).
   googleRefreshToken String?
   googleCalendarId   String?  @default("primary")
@@ -77,6 +100,8 @@ model Tenant {
   usage        Usage[]
   kbDocs       KbDoc[]
   kbChunks     KbChunk[]
+  digests      DigestLog[]
+  ownerMessages OwnerMessage[]
   auditLogs    AuditLog[]
   broadcasts   Broadcast[]
 }
@@ -224,6 +249,38 @@ model AuditLog {
   action    String
   detail    String   @default("")
   createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+}
+
+// One row per delivered owner morning digest. The @@unique([tenantId, day])
+// is the idempotency guard — the insert itself claims the day, so a restarted
+// or duplicated worker can never send two digests for the same KE calendar day.
+model DigestLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  day       String   // KE calendar day the digest was sent (YYYY-MM-DD)
+  channel   String   // whatsapp | email
+  status    String   @default("sent") // sent | failed
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, day])
+}
+
+// The owner's private chat with their business. Kept in its own table (not the
+// customer Contact/Message tables) so owner traffic never touches lead stats,
+// billing conversation counts, or the pipeline. Read-only assistant for now.
+model OwnerMessage {
+  id          String   @id @default(cuid())
+  tenantId    String
+  direction   String // "in" (owner) | "out" (assistant)
+  text        String
+  waMessageId String?  @unique // Meta wamid — unique so redelivered webhooks are idempotent
+  createdAt   DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 

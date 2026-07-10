@@ -48,7 +48,7 @@ export function renderOgImage() {
         </div>
 
         <div style={{ display: "flex", gap: 24, fontSize: 24, color: "rgba(255,255,255,0.88)" }}>
-          <span>14-day free trial</span>
+          <span>7-day free trial</span>
           <span>·</span>
           <span>KES pricing</span>
           <span>·</span>

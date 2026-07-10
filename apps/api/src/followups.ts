@@ -7,6 +7,8 @@ import { windowIsOpen, type MessageSender } from "./whatsapp/sender.js";
 import { withinDailyCap } from "./whatsapp/ratelimit.js";
 import { pollQualityRatings } from "./whatsapp/quality.js";
 import { runRetentionSweep } from "./retention.js";
+import { runDigestSweep } from "./digest.js";
+import { runBillingSweep } from "./billing.js";
 
 export interface FollowUpConfig {
   enabled?: boolean;
@@ -45,6 +47,8 @@ export function startFollowUpWorker(sender: MessageSender, intervalMs = 60_000):
       await sendAppointmentReminders(sender);
       await pollQualityRatings();
       await runRetentionSweep();
+      await runDigestSweep(sender);
+      await runBillingSweep();
     } catch (err) {
       console.error("[followups] tick failed:", err);
     }

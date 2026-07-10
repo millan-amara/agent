@@ -16,7 +16,8 @@ import { registerBroadcastRoutes } from "./api/broadcasts.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { ensureDevTenant } from "./devTenant.js";
 import { startFollowUpWorker } from "./followups.js";
-import { InMemoryDebouncedQueue, parseContactKey, type QueueDriver } from "./queue/queue.js";
+import { InMemoryDebouncedQueue, parseContactKey, isOwnerKey, ownerTenantId, type QueueDriver } from "./queue/queue.js";
+import { runOwnerTurn } from "./agent/owner.js";
 import { BullMqQueue } from "./queue/bullmq.js";
 import { redisEnabled } from "./redis.js";
 import { registerWebhookRoutes } from "./whatsapp/webhook.js";
@@ -63,6 +64,10 @@ async function main() {
   // prod, in-process in dev). Simulator traffic batches faster than webhook.
   const runTurn = (debounceMs: number, name: string): QueueDriver => {
     const handler = async (key: string) => {
+      if (isOwnerKey(key)) {
+        await runOwnerTurn(ownerTenantId(key), sender);
+        return;
+      }
       const { tenantId, contactId } = parseContactKey(key);
       await runAgentTurn(tenantId, contactId, sender);
     };

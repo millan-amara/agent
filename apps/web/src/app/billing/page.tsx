@@ -51,6 +51,33 @@ export default function BillingPage() {
     }
   };
 
+  const cancelPlan = async () => {
+    if (!window.confirm("Cancel your subscription? Your AI keeps working until the end of the paid period.")) return;
+    setBusy("cancel");
+    setError(null);
+    try {
+      await api.cancelSubscription();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const resumePlan = async () => {
+    setBusy("resume");
+    setError(null);
+    try {
+      await api.resumeSubscription();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (!status) return <p className="p-6 text-sm text-muted">Loading…</p>;
 
   const trialDaysLeft = status.trialEndsAt
@@ -90,7 +117,8 @@ export default function BillingPage() {
           )}
           {status.state === "active" && status.planRenewsAt && (
             <span className="text-sm text-muted">
-              Renews {new Date(status.planRenewsAt).toLocaleDateString()}
+              {status.cancelAtPeriodEnd ? "Ends " : "Renews "}
+              {new Date(status.planRenewsAt).toLocaleDateString()}
             </span>
           )}
         </div>
@@ -103,15 +131,20 @@ export default function BillingPage() {
             </span>
           </div>
           {status.limit ? (
-            <div className="h-2 w-full overflow-hidden rounded-full bg-canvas">
-              <div
-                className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-attention" : "bg-primary-600"}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-          ) : (
-            <p className="text-xs text-muted">Unlimited during your trial.</p>
-          )}
+            <>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-canvas">
+                <div
+                  className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-attention" : "bg-primary-600"}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {status.state === "trial" && (
+                <p className="mt-1.5 text-xs text-muted">
+                  Your free trial includes {status.limit} conversations. Subscribe any time for more.
+                </p>
+              )}
+            </>
+          ) : null}
         </div>
         {status.state === "readonly" && (
           <p className="mt-4 rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">
@@ -120,9 +153,36 @@ export default function BillingPage() {
         )}
         {status.state === "over_limit" && (
           <p className="mt-4 rounded-card bg-warning-soft px-3 py-2 text-xs text-warning">
-            You&apos;ve hit your plan&apos;s conversation limit — new conversations are paused until
-            next month or an upgrade. Existing chats keep working.
+            {status.planTier
+              ? "You've hit your plan's conversation limit — new conversations are paused until next month or an upgrade. Existing chats keep working."
+              : `You've used all ${status.limit} free-trial conversations — subscribe below to let your AI keep replying to customers.`}
           </p>
+        )}
+
+        {/* Cancel / resume — only for a real paid subscription */}
+        {status.planTier && (status.state === "active" || status.state === "over_limit") && (
+          <div className="mt-4 border-t border-line pt-4">
+            {status.cancelAtPeriodEnd ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-warning">
+                  Your plan is set to end
+                  {status.planRenewsAt ? ` on ${new Date(status.planRenewsAt).toLocaleDateString()}` : " at the end of this period"}
+                  . You keep full access until then.
+                </p>
+                <Button variant="secondary" size="sm" disabled={busy !== null} onClick={() => void resumePlan()}>
+                  {busy === "resume" ? "Resuming…" : "Resume plan"}
+                </Button>
+              </div>
+            ) : (
+              <button
+                onClick={() => void cancelPlan()}
+                disabled={busy !== null}
+                className="text-xs text-muted underline-offset-2 hover:text-danger hover:underline disabled:opacity-50"
+              >
+                {busy === "cancel" ? "Cancelling…" : "Cancel subscription"}
+              </button>
+            )}
+          </div>
         )}
       </Card>
 
@@ -136,6 +196,9 @@ export default function BillingPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         {plans.map((p, i) => {
           const current = status.planTier === p.tier && status.state !== "readonly";
+          const isPaid = Boolean(status.planTier) && status.state !== "readonly";
+          const curIdx = plans.findIndex((x) => x.tier === status.planTier);
+          const changeLabel = !isPaid ? "Choose" : i > curIdx ? "Upgrade" : "Downgrade";
           const popular = i === 1;
           return (
             <Card
@@ -168,13 +231,20 @@ export default function BillingPage() {
                 ) : busy === p.tier ? (
                   "Redirecting…"
                 ) : (
-                  "Choose"
+                  changeLabel
                 )}
               </Button>
             </Card>
           );
         })}
       </div>
+
+      {Boolean(status.planTier) && status.state !== "readonly" && (
+        <p className="text-xs text-muted">
+          Switching plans starts a new billing cycle at the new price (no proration). Your previous
+          subscription is cancelled automatically.
+        </p>
+      )}
     </div>
   );
 }

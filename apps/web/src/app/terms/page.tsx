@@ -101,9 +101,10 @@ export default function TermsPage() {
 
       <h2 id="plans">5. Plans, trials &amp; billing</h2>
       <p>
-        New accounts include a <strong>14-day free trial</strong> of the full Service. After the
-        trial, continued use requires an active paid subscription to one of our plans (Starter,
-        Growth, or Pro). Plans are billed in advance on a recurring basis through our payment
+        New accounts include a <strong>7-day free trial</strong> of the full Service, covering up to
+        15 conversations. After the trial (or once the trial conversation limit is reached),
+        continued use requires an active paid subscription to one of our plans (Starter, Growth, or
+        Pro). Plans are billed in advance on a recurring basis through our payment
         processor, <a href="https://paystack.com">Paystack</a>, at the prices shown on our{" "}
         <a href="/pricing">pricing page</a> (in KES).
       </p>

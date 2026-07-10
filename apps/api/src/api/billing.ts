@@ -4,6 +4,8 @@ import { requireAuth, requireOwner } from "../auth/auth.js";
 import {
   billingStatus,
   createSubscriptionCheckout,
+  disableSubscription,
+  enableSubscription,
   PLANS,
   platformBillingConfigured,
   type TierId,
@@ -40,6 +42,40 @@ export function registerBillingRoutes(app: FastifyInstance): void {
     } catch (err) {
       return reply.code(400).send({ error: (err as Error).message });
     }
+  });
+
+  // Cancel at period end: stop renewal on Paystack; access stays until planRenewsAt.
+  app.post("/api/billing/cancel", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    if (auth.tenant.plan !== "active") {
+      return reply.code(400).send({ error: "You don't have an active subscription to cancel." });
+    }
+    try {
+      if (auth.tenant.paystackSubscriptionCode) {
+        await disableSubscription(auth.tenant.paystackSubscriptionCode);
+      }
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+    await db.tenant.update({ where: { id: auth.tenant.id }, data: { cancelAtPeriodEnd: true } });
+    return { ok: true };
+  });
+
+  // Undo a scheduled cancellation before the period ends.
+  app.post("/api/billing/resume", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    if (!auth.tenant.cancelAtPeriodEnd) return { ok: true };
+    try {
+      if (auth.tenant.paystackSubscriptionCode) {
+        await enableSubscription(auth.tenant.paystackSubscriptionCode);
+      }
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+    await db.tenant.update({ where: { id: auth.tenant.id }, data: { cancelAtPeriodEnd: false } });
+    return { ok: true };
   });
 
   // Dev-only helper to exercise enforcement without Paystack: flip plan state.

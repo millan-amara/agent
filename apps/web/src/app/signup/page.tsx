@@ -48,10 +48,10 @@ export default function SignupPage() {
           <ul className="mt-8 space-y-3 text-sm text-primary-50">
             <Feature icon={Clock} text="Live in about 10 minutes" />
             <Feature icon={Zap} text="No code - just describe your business" />
-            <Feature icon={ShieldCheck} text="14-day free trial, KES pricing after" />
+            <Feature icon={ShieldCheck} text="7-day free trial" />
           </ul>
         </div>
-        <p className="text-xs text-primary-100/70">Built for Kenyan businesses</p>
+        <p className="text-xs text-primary-100/70">Built for your businesses</p>
       </aside>
 
       {/* Form panel */}

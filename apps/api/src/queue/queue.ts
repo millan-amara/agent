@@ -71,3 +71,11 @@ export const parseContactKey = (key: string) => {
   const idx = key.indexOf(":");
   return { tenantId: key.slice(0, idx), contactId: key.slice(idx + 1) };
 };
+
+// Owner-chat turns ride the same queue (for debounce + the sender wiring) under
+// a distinct key. cuid tenant ids never contain a colon, so the "owner:" prefix
+// is unambiguous against contactKey's "tenantId:contactId" form.
+const OWNER_PREFIX = "owner:";
+export const ownerKey = (tenantId: string) => `${OWNER_PREFIX}${tenantId}`;
+export const isOwnerKey = (key: string) => key.startsWith(OWNER_PREFIX);
+export const ownerTenantId = (key: string) => key.slice(OWNER_PREFIX.length);

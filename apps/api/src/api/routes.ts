@@ -15,6 +15,13 @@ import {
   variableCount,
 } from "../whatsapp/templates.js";
 import { parseFollowUpConfig } from "../followups.js";
+import {
+  parseDigestConfig,
+  buildDigest,
+  deliverDigest,
+  renderDigestText,
+  type DigestChannel,
+} from "../digest.js";
 import { parseBookingConfig, type BookingConfig } from "../booking.js";
 import { draftBusinessDescription } from "../agent/draft.js";
 import {
@@ -122,6 +129,17 @@ export function registerApiRoutes(
       stages: JSON.parse(auth.tenant.stages) as string[],
       profile: JSON.parse(auth.tenant.businessProfile) as BusinessProfile,
       followUps: parseFollowUpConfig(auth.tenant),
+      digest: parseDigestConfig(auth.tenant),
+      ownerChat: {
+        enabled: auth.tenant.ownerChatEnabled,
+        phone: auth.tenant.ownerPhone ?? "",
+      },
+      publicPage: {
+        enabled: auth.tenant.publicEnabled,
+        slug: auth.tenant.slug ?? "",
+        url: auth.tenant.slug ? `${config.APP_BASE_URL}/b/${auth.tenant.slug}` : "",
+        waConnected: Boolean(auth.tenant.waDisplayPhone || auth.tenant.waPhoneNumberId),
+      },
       booking: parseBookingConfig(auth.tenant),
       paystackConfigured: Boolean(auth.tenant.paystackSecretKey),
       paymentApproval: paymentApprovalRequired(auth.tenant),
@@ -418,6 +436,130 @@ export function registerApiRoutes(
     return { ok: true };
   });
 
+  // Owner morning digest configuration.
+  app.put("/api/tenant/digest", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { enabled, hour, channel, ownerPhone } = req.body as {
+      enabled?: boolean;
+      hour?: number;
+      channel?: string;
+      ownerPhone?: string;
+    };
+    const h = Number(hour);
+    const safeHour = Number.isInteger(h) && h >= 0 && h <= 23 ? h : 7;
+    const safeChannel: DigestChannel =
+      channel === "whatsapp" || channel === "email" ? channel : "auto";
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: {
+        digestConfig: JSON.stringify({
+          enabled: Boolean(enabled),
+          hour: safeHour,
+          channel: safeChannel,
+          ownerPhone: (ownerPhone ?? "").replace(/\D/g, ""),
+        }),
+      },
+    });
+    return { ok: true };
+  });
+
+  // Preview today's digest (computed, not sent) — powers the settings preview.
+  app.get("/api/digest/preview", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const data = await buildDigest(auth.tenant.id, new Date());
+    return { config: parseDigestConfig(auth.tenant), data, text: renderDigestText(auth.tenant, data) };
+  });
+
+  // Send a digest right now (owner-only) — "try it" button. Does not touch the
+  // once-per-day DigestLog, so it never blocks the scheduled morning send.
+  app.post("/api/digest/test", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    const data = await buildDigest(auth.tenant.id, new Date());
+    try {
+      const result = await deliverDigest(auth.tenant, sender, data);
+      if (!result.delivered) {
+        return reply.code(422).send({ error: `Not delivered: ${result.reason}`, channel: result.channel });
+      }
+      return { ok: true, channel: result.channel };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message : "send failed" });
+    }
+  });
+
+  // Owner chat: the owner's own WhatsApp number + whether messages from it are
+  // routed to the private read-only assistant. The number is also used by the
+  // digest, so it lives on the tenant, not in digestConfig.
+  app.put("/api/tenant/owner-chat", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    const { enabled, phone } = req.body as { enabled?: boolean; phone?: string };
+    const digits = (phone ?? "").replace(/\D/g, "");
+    if (enabled && digits.length < 9) {
+      return reply.code(400).send({ error: "Enter your WhatsApp number in full international format." });
+    }
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: { ownerChatEnabled: Boolean(enabled), ownerPhone: digits || null },
+    });
+    return { ok: true };
+  });
+
+  // Public business page opt-in + slug.
+  app.put("/api/tenant/public", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    const { enabled, slug } = req.body as { enabled?: boolean; slug?: string };
+    const clean = (slug ?? "")
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40);
+    if (enabled && clean.length < 3) {
+      return reply.code(400).send({ error: "Choose a page name of at least 3 characters (letters and numbers)." });
+    }
+    if (clean) {
+      const taken = await db.tenant.findFirst({
+        where: { slug: clean, NOT: { id: auth.tenant.id } },
+        select: { id: true },
+      });
+      if (taken) return reply.code(409).send({ error: "That page name is taken — try another." });
+    }
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: { publicEnabled: Boolean(enabled), slug: clean || null },
+    });
+    return { ok: true, slug: clean, url: clean ? `${config.APP_BASE_URL}/b/${clean}` : "" };
+  });
+
+  // Public, unauthenticated business page data. Public-safe fields only — never
+  // contacts, messages, or stats. Gated on opt-in + onboarding.
+  app.get("/api/public/business/:slug", async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    const tenant = await db.tenant.findUnique({ where: { slug } });
+    if (!tenant || !tenant.publicEnabled || !tenant.onboarded) {
+      return reply.code(404).send({ error: "Business not found" });
+    }
+    const p = JSON.parse(tenant.businessProfile) as BusinessProfile;
+    const waNumber = (tenant.waDisplayPhone ?? "").replace(/\D/g, "");
+    const greeting = encodeURIComponent(`Hi ${tenant.name}, I found you online and have a question.`);
+    return {
+      name: tenant.name,
+      vertical: tenant.vertical,
+      description: p.description ?? "",
+      services: (p.services ?? []).slice(0, 50),
+      faqs: (p.faqs ?? []).slice(0, 50),
+      hours: p.businessHours ?? "",
+      logoUrl: tenant.logoUrl,
+      phone: tenant.businessPhone,
+      email: tenant.businessEmail,
+      waLink: waNumber ? `https://wa.me/${waNumber}?text=${greeting}` : null,
+    };
+  });
+
   // ---- WhatsApp template messages (24h-window compliance) ----
 
   app.get("/api/message-templates", async (req, reply) => {
@@ -534,6 +676,7 @@ export function registerApiRoutes(
       data: {
         waPhoneNumberId: phoneNumberId.trim(),
         waAccessToken: encryptSecret(accessToken.trim()),
+        waDisplayPhone: (info.display_phone_number ?? "").replace(/\D/g, "") || null,
         ...(wabaId?.trim() ? { waWabaId: wabaId.trim() } : {}),
       },
     });
@@ -567,6 +710,7 @@ export function registerApiRoutes(
           waPhoneNumberId: phoneNumberId.trim(),
           waAccessToken: encryptSecret(token),
           waWabaId: wabaId.trim(),
+          waDisplayPhone: (info.number ?? "").replace(/\D/g, "") || null,
         },
       });
       await audit(auth.tenant.id, auth.user.id, "whatsapp.connect", `embedded:${info.number}`);

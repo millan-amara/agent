@@ -9,7 +9,7 @@ import { Reveal } from "@/components/Reveal";
 import { softwareApplicationSchema, faqSchema, breadcrumbSchema } from "@/lib/structured-data";
 
 const PRICING_DESCRIPTION =
-  "Simple KES pricing for WhatsApp-first businesses. Every plan includes the full toolkit: AI replies, inbox, bookings, invoices, payments, and broadcasts. 14-day free trial.";
+  "Simple KES pricing for WhatsApp-first businesses. Every plan includes the full toolkit: AI replies, inbox, bookings, invoices, payments, and broadcasts. 7-day free trial.";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -112,7 +112,7 @@ const FAQS = [
   },
   {
     q: "Is there a free trial?",
-    a: "Yes. Every plan starts with a 14-day free trial of the full Service, and no card is required to begin.",
+    a: "Yes. Every plan starts with a 7-day free trial of the full Service — up to 15 conversations — and no card is required to begin.",
   },
   {
     q: "Can I change or cancel my plan?",
@@ -199,7 +199,7 @@ export default function PricingPage() {
             ))}
           </Reveal>
           <p className="mt-8 text-center text-sm text-muted">
-            All plans include a 14-day free trial. No card required to start.
+            All plans include a 7-day free trial. No card required to start.
           </p>
         </section>
 
@@ -257,7 +257,7 @@ export default function PricingPage() {
               Start free, upgrade when you grow.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-lg text-primary-100/85">
-              Set up your AI, test it, and connect WhatsApp, all within your 14-day trial.
+              Set up your AI, test it, and connect WhatsApp, all within your 7-day trial.
             </p>
             <Link
               href="/signup"
