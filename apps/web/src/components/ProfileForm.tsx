@@ -1,23 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Store,
-  Tags,
-  MessagesSquare,
-  ShieldCheck,
-  Plus,
-  X,
-  Sparkles,
-  Loader2,
-  CheckCircle2,
-  Info,
-  type LucideIcon,
-} from "lucide-react";
+import { Plus, X, Sparkles, Loader2, CheckCircle2, Info } from "lucide-react";
 import { api, type BusinessProfile } from "@/lib/api";
 import { parseFixedAmountKes, formatKes } from "@/lib/price";
 import { Button } from "@/components/ui/Button";
-import { Input, Textarea } from "@/components/ui/Field";
+import { Card } from "@/components/ui/Card";
+import { Field, Input, Textarea } from "@/components/ui/Field";
 
 /**
  * The guided prompt builder: structured fields that compile into the agent's
@@ -111,15 +100,16 @@ export function ProfileForm({
   };
 
   return (
-    <form onSubmit={(e) => void submit(e)} className="space-y-7">
+    <form onSubmit={(e) => void submit(e)} className="space-y-4">
       <Section
-        icon={Store}
         title="The basics"
         description="What you do and how you operate — the AI's foundation."
       >
         <Field
           label="Tell Azayon about your business"
-          hint="What you do, who for, where. The AI uses this to answer customers."
+          htmlFor="profile-description"
+          // The error takes over the hint slot rather than adding a line below it.
+          hint={draftError ? <span className="text-danger">{draftError}</span> : "What you do, who for, where."}
           action={
             <button
               type="button"
@@ -137,6 +127,7 @@ export function ProfileForm({
           }
         >
           <Textarea
+            id="profile-description"
             required
             rows={4}
             maxLength={4000}
@@ -144,7 +135,6 @@ export function ProfileForm({
             onChange={(e) => set("description", e.target.value)}
             placeholder="e.g. We're a physiotherapy clinic in Westlands helping people recover from injury and pain. Or jot a few words and tap Draft with AI."
           />
-          {draftError && <p className="mt-1 text-xs text-danger">{draftError}</p>}
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Business hours">
@@ -159,7 +149,7 @@ export function ProfileForm({
             label={bookingAutomated ? "Anything else about bookings?" : "How do bookings work?"}
             hint={
               bookingAutomated
-                ? "Azayon books into your calendar itself. Use this for extra context only — e.g. “arrive 10 minutes early”."
+                ? "Azayon books into your calendar itself — extra context only."
                 : "How a booking request should be handled."
             }
           >
@@ -178,7 +168,6 @@ export function ProfileForm({
       </Section>
 
       <Section
-        icon={Tags}
         title="Services & prices"
         description={
           paymentsEnabled
@@ -205,7 +194,6 @@ export function ProfileForm({
       </Section>
 
       <Section
-        icon={MessagesSquare}
         title="Common questions"
         description="Answer these once and the AI handles them forever."
       >
@@ -219,12 +207,13 @@ export function ProfileForm({
       </Section>
 
       <Section
-        icon={ShieldCheck}
         title="Voice & guardrails"
         description="How replies should sound, and the lines the AI must never cross."
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Tone" hint="How should replies sound?">
+          {/* The section already says "How replies should sound" — the placeholder
+              carries the rest. */}
+          <Field label="Tone">
             <Input
               value={p.tone ?? ""}
               onChange={(e) => set("tone", e.target.value)}
@@ -243,7 +232,7 @@ export function ProfileForm({
         </div>
         <Field
           label="Things the AI must never do"
-          hint="One per line. Rules specific to your business — sticking to your price list and never promising outcomes are already built in."
+          hint="One per line. Price-list and no-promises rules are already built in."
         >
           <Textarea
             rows={3}
@@ -254,8 +243,10 @@ export function ProfileForm({
         </Field>
       </Section>
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" size="lg" disabled={saving}>
+      {/* Outside the cards: one form spans all four. Default size matches every
+          other settings save button. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={saving}>
           {saving ? "Saving…" : submitLabel}
         </Button>
         {dirty && !saving && <span className="text-xs text-muted">Unsaved changes</span>}
@@ -306,53 +297,28 @@ function servicePriceHint([name, price]: string[]) {
   );
 }
 
+/**
+ * One card per group — the same shape every other settings tab uses, so "Your AI"
+ * reads with the same rhythm. The old version was a single card holding four
+ * icon-chip groups whose bodies were indented under the chip; that chip forced both
+ * the ragged left edge and a 14px title that collided with its own 14px description.
+ * Title 16px / description 14px / field label 14px / hint 12px now step cleanly.
+ */
 function Section({
-  icon: Icon,
   title,
   description,
   children,
 }: {
-  icon: LucideIcon;
   title: string;
   description: string;
   children: React.ReactNode;
 }) {
   return (
-    <section>
-      <div className="mb-3 flex items-start gap-3">
-        <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-card bg-primary-soft text-primary-700">
-          <Icon className="size-4" strokeWidth={2} />
-        </span>
-        <div>
-          <h3 className="text-sm font-semibold text-ink">{title}</h3>
-          <p className="text-sm text-muted">{description}</p>
-        </div>
-      </div>
-      <div className="space-y-4 sm:pl-11">{children}</div>
-    </section>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  action,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="block">
-      <div className="mb-1 flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-ink">{label}</span>
-        {action}
-      </div>
-      {hint && <span className="-mt-0.5 mb-1.5 block text-xs text-muted">{hint}</span>}
-      {children}
-    </div>
+    <Card className="p-5">
+      <h2 className="font-semibold text-ink">{title}</h2>
+      <p className="mb-4 mt-1 text-sm text-muted">{description}</p>
+      <div className="space-y-4">{children}</div>
+    </Card>
   );
 }
 
@@ -381,27 +347,29 @@ function ListEditor({
     <div className="space-y-2">
       {rows.map((row, i) => (
         <div key={i} className="space-y-1">
-          <div className="flex gap-2">
-            <Input
-              value={row[0] ?? ""}
-              onChange={(e) => update(i, 0, e.target.value)}
-              placeholder={placeholders[0]}
-              aria-label={`${labels[0]} ${i + 1}`}
-              maxLength={500}
-              className="w-2/5"
-            />
-            <Input
-              value={row[1] ?? ""}
-              onChange={(e) => update(i, 1, e.target.value)}
-              placeholder={placeholders[1]}
-              aria-label={`${labels[1]} ${i + 1}`}
-              maxLength={2000}
-              className="flex-1"
-            />
+          {/* Side-by-side left ~97px per input at 375px. Stack below sm, keep the
+              40/60 split from sm up. min-w-0 or the inputs won't shrink in the flex row. */}
+          <div className="flex items-start gap-2">
+            <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[2fr_3fr]">
+              <Input
+                value={row[0] ?? ""}
+                onChange={(e) => update(i, 0, e.target.value)}
+                placeholder={placeholders[0]}
+                aria-label={`${labels[0]} ${i + 1}`}
+                maxLength={500}
+              />
+              <Input
+                value={row[1] ?? ""}
+                onChange={(e) => update(i, 1, e.target.value)}
+                placeholder={placeholders[1]}
+                aria-label={`${labels[1]} ${i + 1}`}
+                maxLength={2000}
+              />
+            </div>
             <button
               type="button"
               onClick={() => onChange(rows.filter((_, k) => k !== i))}
-              className="grid size-9 shrink-0 place-items-center rounded-card text-muted hover:bg-danger-soft hover:text-danger"
+              className="grid h-10 w-9 shrink-0 place-items-center rounded-card text-muted hover:bg-danger-soft hover:text-danger"
               aria-label={`Remove ${labels[0].toLowerCase()} ${i + 1}`}
             >
               <X className="size-4" />

@@ -59,23 +59,57 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   },
 );
 
-/** Label + optional hint wrapper around a control. */
+/**
+ * Label + optional hint wrapper around a control.
+ *
+ * Without `action` this is a real <label>, so the control is associated implicitly.
+ * With `action` (a button on the label row, e.g. "Draft with AI") it can't be — a
+ * <button> may not nest inside a <label> — so it renders a <div> and associates
+ * explicitly via `htmlFor`. Pass a matching `id` on the control, or it will have no
+ * accessible name.
+ */
 export function Field({
   label,
   hint,
+  action,
+  htmlFor,
   children,
   className = "",
 }: {
   label: string;
   hint?: ReactNode;
+  /** Right-aligned control on the label row. Requires `htmlFor`. */
+  action?: ReactNode;
+  /** id of the control being labelled. Required when `action` is set. */
+  htmlFor?: string;
   children: ReactNode;
   className?: string;
 }) {
+  const labelClass = "block text-sm font-medium text-ink";
+  const hintNode = hint && <span className="mt-1 block text-xs text-muted">{hint}</span>;
+
+  if (action) {
+    return (
+      <div className={`block ${className}`}>
+        {/* flex-wrap so the action drops below the label on narrow screens
+            instead of squeezing it. */}
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <label htmlFor={htmlFor} className={labelClass}>
+            {label}
+          </label>
+          {action}
+        </div>
+        {children}
+        {hintNode}
+      </div>
+    );
+  }
+
   return (
     <label className={`block ${className}`}>
-      <span className="mb-1 block text-sm font-medium text-ink">{label}</span>
+      <span className={`mb-1 ${labelClass}`}>{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
+      {hintNode}
     </label>
   );
 }

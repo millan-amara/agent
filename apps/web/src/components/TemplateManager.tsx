@@ -72,7 +72,7 @@ export function TemplateManager({ wabaConfigured }: { wabaConfigured: boolean })
     <div>
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-xs text-muted">
-          Needed to message customers more than 24h after their last reply (e.g. follow-ups).
+          Needed to message customers more than 24h after their last reply.
         </p>
         <div className="flex shrink-0 gap-2">
           <Button variant="ghost" size="sm" onClick={() => void sync()}>

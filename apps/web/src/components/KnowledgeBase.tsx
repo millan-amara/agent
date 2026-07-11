@@ -66,8 +66,8 @@ export function KnowledgeBase() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted">
-        Upload docs and FAQs so the AI can answer from your own material — not just the profile
-        form. It searches these when a question isn&apos;t covered by your instructions.
+        Upload docs and FAQs. The AI searches these when a question isn&apos;t covered by your
+        instructions.
       </p>
       {msg && <p className="rounded-card bg-primary-soft px-3 py-2 text-xs text-primary-700">{msg}</p>}
       {error && <p className="rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}

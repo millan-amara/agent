@@ -209,7 +209,7 @@ export default function SettingsPage() {
           {tab === "business" && (
             <Section
               title="Your business"
-              description="Your name and logo brand this app's sidebar, every invoice your customers open, and your public page."
+              description="Your name and logo brand the sidebar, your invoices, and your public page."
             >
               {brandingMsg && <Notice className="mb-3">{brandingMsg}</Notice>}
               <form
@@ -243,7 +243,10 @@ export default function SettingsPage() {
                 }}
                 className="space-y-4"
               >
-                <Field label="Business name" hint="Shown in the sidebar, on invoices, and on your public page.">
+                {/* No hint here — the section description above already says where
+                    the name and logo show up. Saying it twice is what made this page
+                    read like a document. */}
+                <Field label="Business name">
                   <Input
                     required
                     maxLength={120}
@@ -346,8 +349,11 @@ export default function SettingsPage() {
             </Section>
           )}
 
+          {/* No Section wrapper: ProfileForm renders its own cards, one per group,
+              so wrapping would nest them inside a fifth. The old "Tell Azayon how to
+              reply" heading is redundant once each group carries its own title. */}
           {tab === "ai" && (
-            <Section title="Tell Azayon how to reply">
+            <>
               {saved && <Notice>Saved — the AI uses the new info immediately. Try it in the Simulator.</Notice>}
               <ProfileForm
                 initial={tenant.profile}
@@ -358,7 +364,7 @@ export default function SettingsPage() {
                 bookingAutomated={tenant.booking.enabled}
                 onDirtyChange={setAiDirty}
               />
-            </Section>
+            </>
           )}
 
           {tab === "knowledge" && (
@@ -370,7 +376,7 @@ export default function SettingsPage() {
           {tab === "pipeline" && (
             <Section
               title="Pipeline stages"
-              description="The steps a lead moves through. These are the exact names your AI sees and uses when it moves a lead, so name them the way you talk about your business."
+              description="The steps a lead moves through. Your AI uses these exact names."
             >
               {tenant.role === "owner" ? (
                 <StageEditor
@@ -445,7 +451,7 @@ export default function SettingsPage() {
 
               <Section
                 title="Public page"
-                description="A simple public page for your business — your services, hours and a “Chat on WhatsApp” button that drops customers straight into your AI. Share the link anywhere: bio, posters, ads."
+                description="A public page with your services, hours, and a Chat on WhatsApp button."
               >
                 {publicMsg && <Notice className="mb-3">{publicMsg}</Notice>}
                 {publicPage && (
@@ -487,13 +493,15 @@ export default function SettingsPage() {
                           placeholder="my-salon"
                         />
                       </div>
+                      {/* "This becomes your shareable link" is cut: the full URL is
+                          printed below once saved, and the /b/ prefix is right there. */}
                       <span className="mt-1 block text-xs text-muted">
-                        Letters and numbers. This becomes your shareable link.
+                        Letters, numbers and dashes.
                       </span>
                     </label>
                     {!publicPage.waConnected && (
                       <p className="rounded-card bg-attentionSoft px-3 py-2 text-xs text-attention">
-                        Connect WhatsApp above so the page’s “Chat” button can reach your AI.
+                        Connect WhatsApp above so the Chat button works.
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
@@ -534,7 +542,7 @@ export default function SettingsPage() {
             <>
               <Section
                 title="Appointment booking"
-                description="When enabled, the AI offers real slots from this calendar and books them in chat."
+                description="The AI offers real slots and books them in chat."
               >
                 <div className="mb-4 flex items-center justify-between gap-3 rounded-card border border-line bg-canvas px-3 py-2.5">
                   <div>
@@ -675,7 +683,7 @@ export default function SettingsPage() {
 
               <Section
                 title="Automatic follow-ups"
-                description="When a customer goes quiet after your last message, Azayon checks in for you — a natural AI message inside the 24h window, your approved template after it."
+                description="Azayon checks in when a customer goes quiet."
               >
                 {fuMsg && <Notice>{fuMsg}</Notice>}
                 {followUps && (
@@ -702,7 +710,7 @@ export default function SettingsPage() {
                       <span className="font-medium">Follow up automatically when customers go quiet</span>
                     </label>
                     <label className="block text-sm">
-                      <span className="mb-1 block font-medium">Check-in schedule (hours after silence)</span>
+                      <span className="mb-1 block font-medium">Check in after (hours of silence)</span>
                       <Input
                         className="tnum w-48"
                         value={followUps.delaysHours.join(", ")}
@@ -717,19 +725,19 @@ export default function SettingsPage() {
                         }
                         placeholder="24, 72"
                       />
+                      {/* Live readback of what they typed, instead of a worked example. */}
                       <span className="mt-1 block text-xs text-muted">
-                        e.g. &quot;24, 72&quot; = first nudge after a day, second after three more days,
-                        then stop.
+                        {describeDelays(followUps.delaysHours)}
                       </span>
                     </label>
                     <label className="block text-sm">
-                      <span className="mb-1 block font-medium">Template for closed-window follow-ups</span>
+                      <span className="mb-1 block font-medium">Once the 24h window closes</span>
                       <Select
                         className="max-w-md"
                         value={followUps.templateId}
                         onChange={(e) => setFollowUps({ ...followUps, templateId: e.target.value })}
                       >
-                        <option value="">None — skip when the 24h window is closed</option>
+                        <option value="">Don&apos;t follow up</option>
                         {fuTemplates
                           .filter((t) => t.status === "approved")
                           .map((t) => (
@@ -739,8 +747,18 @@ export default function SettingsPage() {
                           ))}
                       </Select>
                       {fuTemplates.every((t) => t.status !== "approved") && (
+                        // Templates live on the WhatsApp tab, not "above" — that
+                        // instruction was left over from an older layout.
                         <span className="mt-1 block text-xs text-muted">
-                          No approved templates yet — create and submit one above.
+                          No approved templates yet —{" "}
+                          <button
+                            type="button"
+                            onClick={() => setTab("whatsapp")}
+                            className="font-medium text-primary-700 hover:underline"
+                          >
+                            add one under WhatsApp
+                          </button>
+                          .
                         </span>
                       )}
                     </label>
@@ -751,7 +769,14 @@ export default function SettingsPage() {
 
               <Section
                 title="Chat with your business"
-                description="Message your own WhatsApp number and ask about leads, invoices, appointments and what needs you — a private assistant only you can reach. Read-only for now (it looks things up; it doesn't change anything yet)."
+                description="Ask your business questions over WhatsApp — leads, invoices, bookings."
+                // The caveat is a standing fact about the feature, so it reads better
+                // as a label than as a parenthetical at the end of a long sentence.
+                badge={
+                  <Badge tone="neutral" title="It looks things up; it can't change anything yet.">
+                    Read-only
+                  </Badge>
+                }
               >
                 {ownerChatMsg && <Notice>{ownerChatMsg}</Notice>}
                 {ownerChat && (
@@ -771,30 +796,34 @@ export default function SettingsPage() {
                   >
                     <label className="block text-sm">
                       <span className="mb-1 block font-medium">Your WhatsApp number</span>
+                      {/* The format lives in the placeholder, not in a sentence. */}
                       <Input
                         className="tnum w-56"
                         value={ownerChat.phone}
                         onChange={(e) => setOwnerChat({ ...ownerChat, phone: e.target.value })}
-                        placeholder="2547…"
+                        placeholder="254712345678"
                       />
                       <span className="mt-1 block text-xs text-muted">
-                        Full international format. Used for owner chat and morning digest delivery.
+                        Also used for the morning digest.
                       </span>
                     </label>
-                    <label className="flex items-center gap-2 text-sm">
+                    {/* The consequence belongs to the switch it describes, and only the
+                        part that protects the user survives — the example prompts don't. */}
+                    <label className="flex items-start gap-2 text-sm">
                       <input
                         type="checkbox"
-                        className="size-4 accent-primary-700"
+                        className={CHECKBOX}
                         checked={ownerChat.enabled}
                         onChange={(e) => setOwnerChat({ ...ownerChat, enabled: e.target.checked })}
                       />
-                      <span className="font-medium">Let me message my business from this number</span>
+                      <span>
+                        <span className="font-medium">Let me message my business from this number</span>
+                        <span className="mt-0.5 block text-xs text-muted">
+                          Your messages reach your assistant, not the sales AI — so you&apos;re never
+                          booked as a lead.
+                        </span>
+                      </span>
                     </label>
-                    <p className="text-xs text-muted">
-                      When on, messages from this number go to your private assistant instead of the customer
-                      sales AI — so it never books you as a lead. Ask things like “leads today”, “who owes me”,
-                      or “what’s on this week”.
-                    </p>
                     <Button type="submit">Save owner chat</Button>
                   </form>
                 )}
@@ -802,7 +831,9 @@ export default function SettingsPage() {
 
               <Section
                 title="Morning digest"
-                description="Your AI's daily report — what it handled yesterday and what still needs you today. Delivered every morning to WhatsApp (when your window is open) or email."
+                // The old description also explained "WhatsApp or email" — which the
+                // "Deliver by" dropdown below already says. The control is the copy.
+                description="A morning report of what your AI handled and what needs you."
               >
                 {digestMsg && <Notice>{digestMsg}</Notice>}
                 {digest && (
@@ -859,11 +890,14 @@ export default function SettingsPage() {
                         </Select>
                       </label>
                     </div>
+                    {/* Conditional copy earns its place: it only appears when WhatsApp
+                        delivery is selected, and it says the one thing that isn't
+                        already visible — where it goes, or why it can't. */}
                     {digest.channel !== "email" && (
                       <p className="text-xs text-muted">
                         {ownerChat?.phone
-                          ? `Delivered to your WhatsApp number (${ownerChat.phone}), set under “Chat with your business” above. Falls back to email when your 24h window is closed and no digest template is approved.`
-                          : "Set your WhatsApp number under “Chat with your business” above to receive this on WhatsApp. Until then it’s emailed to you."}
+                          ? `Sent to ${ownerChat.phone}. Falls back to email if WhatsApp can't reach you.`
+                          : "Add your WhatsApp number above to get this on WhatsApp. For now it's emailed."}
                       </p>
                     )}
                     <div className="flex flex-wrap items-center gap-2">
@@ -922,7 +956,7 @@ export default function SettingsPage() {
             <>
               <Section
                 title="Payments (Paystack)"
-                description="Connect your Paystack account and the AI can collect payment in chat — M-Pesa or card — when a customer agrees to buy."
+                description="Let the AI collect payment in chat — M-Pesa or card."
               >
                 {tenant.paystackConfigured && (
                   <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-success">
@@ -977,8 +1011,8 @@ export default function SettingsPage() {
                     <span>
                       <span className="font-medium">Approve payment links before they’re sent</span>
                       <span className="mt-0.5 block text-xs text-muted">
-                        When on, the AI proposes a payment and you tap to send the link from the inbox —
-                        money never goes out on a guess. Other captures stay automatic.
+                        The AI proposes; you tap to send from the inbox. Money never goes out on a
+                        guess.
                       </span>
                     </span>
                   </label>
@@ -987,7 +1021,7 @@ export default function SettingsPage() {
 
               <Section
                 title="Offline payment instructions"
-                description="Shown on invoices issued without an online pay link — for customers paying by till, bank transfer, or cash."
+                description="Shown on invoices with no online pay link — till, bank transfer, or cash."
               >
                 {payInstrMsg && <Notice className="mb-3">{payInstrMsg}</Notice>}
                 <form
@@ -1039,7 +1073,7 @@ export default function SettingsPage() {
 
               <Section
                 title="Data & compliance"
-                description="Guardrails that protect your WhatsApp number and your customers' data."
+                description="Protects your WhatsApp number and your customers' data."
               >
                 {complianceMsg && <Notice className="mb-3">{complianceMsg}</Notice>}
                 <form
@@ -1068,8 +1102,9 @@ export default function SettingsPage() {
                       onChange={(e) => setCap(e.target.value)}
                       placeholder="6 (default)"
                     />
+                    {/* "Blank = platform default (6)" is already the placeholder. */}
                     <span className="mt-1 block text-xs text-muted">
-                      Caps proactive nudges so you never spam a lead. Blank = platform default (6).
+                      Caps proactive nudges so you never spam a lead.
                     </span>
                   </label>
                   <label className="block text-sm">
@@ -1081,8 +1116,10 @@ export default function SettingsPage() {
                       onChange={(e) => setRetention(e.target.value)}
                       placeholder="Keep forever"
                     />
+                    {/* Ditto "Blank = keep forever". What survives is the non-obvious
+                        part: deleting history does NOT delete the contact. */}
                     <span className="mt-1 block text-xs text-muted">
-                      Blank = keep forever. Contacts and stats are always kept; only message text ages out.
+                      Contacts and stats are always kept — only message text ages out.
                     </span>
                   </label>
                   <Button type="submit">Save compliance settings</Button>
@@ -1112,15 +1149,22 @@ export default function SettingsPage() {
 function Section({
   title,
   description,
+  badge,
   children,
 }: {
   title: string;
+  /** ONE sentence: what this does. Not how it works, not why it's good. */
   description?: string;
+  /** A standing caveat ("Read-only") belongs here as a label, not in the prose. */
+  badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <Card className="p-5">
-      <h2 className="font-semibold">{title}</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="font-semibold">{title}</h2>
+        {badge}
+      </div>
       {description ? (
         <p className="mb-4 mt-1 text-sm text-muted">{description}</p>
       ) : (
@@ -1129,6 +1173,24 @@ function Section({
       {children}
     </Card>
   );
+}
+
+/**
+ * Turns the follow-up delays into a live sentence. Replaces a static worked example
+ * ('e.g. "24, 72" = first nudge after a day…') with the truth about what the user has
+ * actually typed — the control explains itself, so the prose can go.
+ */
+function describeDelays(hours: number[]): string {
+  if (!hours.length) return "No follow-ups will be sent.";
+  const human = (h: number) => {
+    if (h % 24 === 0) {
+      const d = h / 24;
+      return `${d} day${d === 1 ? "" : "s"}`;
+    }
+    return `${h} hour${h === 1 ? "" : "s"}`;
+  };
+  const parts = hours.map((h, i) => (i === 0 ? `after ${human(h)}` : `then ${human(h)} later`));
+  return `${hours.length} nudge${hours.length === 1 ? "" : "s"}: ${parts.join(", ")}, then stop.`;
 }
 
 function Notice({ children, className = "" }: { children: React.ReactNode; className?: string }) {

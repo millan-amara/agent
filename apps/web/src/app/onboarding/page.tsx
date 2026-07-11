@@ -125,12 +125,16 @@ export default function OnboardingPage() {
           <p className="mb-4 rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>
         )}
 
+        {/* Heading outside the cards — ProfileForm now supplies its own, and this is
+            the same shape steps 1 and 2 already use. */}
         {step === 0 && (
-          <div className="rounded-card border border-line bg-surface p-5 shadow-card md:p-6">
-            <h2 className="mb-1 text-lg font-semibold">Teach your AI about your business</h2>
-            <p className="mb-5 text-sm text-muted">
-              The more you share, the better it answers. You can refine all of this later.
-            </p>
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold">Teach your AI about your business</h2>
+              <p className="mt-1 text-sm text-muted">
+                The more you share, the better it answers. You can refine all of this later.
+              </p>
+            </div>
             <ProfileForm
               initial={tenant.profile}
               saving={saving}
