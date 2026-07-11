@@ -27,6 +27,7 @@ export function EmbeddedSignup({ onConnected }: { onConnected: (label: string) =
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const sessionInfo = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export function EmbeddedSignup({ onConnected }: { onConnected: (label: string) =
 
   const launch = () => {
     setError(null);
+    setWarning(null);
     if (!window.FB) return;
     setBusy(true);
     window.FB.login(
@@ -86,6 +88,14 @@ export function EmbeddedSignup({ onConnected }: { onConnected: (label: string) =
           }
           try {
             const res = await api.connectWhatsAppEmbedded({ code, phoneNumberId, wabaId });
+            // Meta gives 24h to sync contacts + history, or the customer has to be
+            // offboarded and redo the whole flow. A silent failure here would look
+            // like a healthy connection right up until it expired.
+            if (!res.syncStarted) {
+              setWarning(
+                "Connected, but WhatsApp didn't accept the contacts/history sync. Reconnect within 24 hours, or Meta will require you to onboard again.",
+              );
+            }
             onConnected(`${res.name} (${res.number})`);
           } catch (err) {
             setError((err as Error).message);
@@ -113,6 +123,9 @@ export function EmbeddedSignup({ onConnected }: { onConnected: (label: string) =
         {busy ? "Connecting…" : "Connect WhatsApp in one click"}
       </Button>
       {error && <p className="text-xs text-danger">{error}</p>}
+      {warning && (
+        <p className="rounded-card bg-attentionSoft px-3 py-2 text-xs text-attention">{warning}</p>
+      )}
     </div>
   );
 }

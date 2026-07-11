@@ -8,7 +8,12 @@ import { getTemplate } from "../templates.js";
 import { handleInboundText } from "../inbound.js";
 import { fetchWithTimeout } from "../http.js";
 import type { QueueDriver } from "../queue/queue.js";
-import { windowIsOpen, WindowClosedError, type MessageSender } from "../whatsapp/sender.js";
+import {
+  windowIsOpen,
+  WindowClosedError,
+  tenantToken,
+  type MessageSender,
+} from "../whatsapp/sender.js";
 import {
   submitTemplate,
   syncTemplateStatuses,
@@ -45,6 +50,8 @@ import {
   exchangeCodeForToken,
   fetchNumberInfo,
   subscribeAppToWaba,
+  unsubscribeAppFromWaba,
+  startCoexistenceSync,
   EmbeddedSignupError,
 } from "../whatsapp/embedded.js";
 import { businessProfileSchema, normalizeProfile, type BusinessProfile } from "../agent/prompt.js";
@@ -70,6 +77,37 @@ const stagesPayloadSchema = z.object({
     .max(12)
     .default([]),
 });
+
+/**
+ * Tell Meta to stop delivering a WABA's webhooks to us — but ONLY if no other tenant
+ * still uses that business account.
+ *
+ * The subscription is per-WABA, not per-number. An agency can legitimately run several
+ * numbers under one WABA with each number mapped to a different Azayon tenant, so
+ * unsubscribing unconditionally would silently kill inbound messages for everyone else
+ * on that account. Hence the count check.
+ *
+ * MUST be called BEFORE the tenant's credentials are cleared/replaced: the stored token
+ * is the only thing that can authorise the unsubscribe, and disconnect throws it away.
+ *
+ * Best-effort — a failure here must not block the disconnect. `tenant` carries the OLD
+ * credentials (the ones that own `wabaId`).
+ */
+async function releaseWabaIfUnused(tenant: Tenant, wabaId: string | null): Promise<boolean> {
+  if (!wabaId) return false;
+  const othersUsing = await db.tenant.count({
+    where: { waWabaId: wabaId, NOT: { id: tenant.id } },
+  });
+  if (othersUsing > 0) {
+    console.log(
+      `[whatsapp] WABA ${wabaId} still used by ${othersUsing} other tenant(s) — leaving the subscription in place`,
+    );
+    return false;
+  }
+  const token = tenantToken(tenant);
+  if (!token) return false;
+  return unsubscribeAppFromWaba(wabaId, token);
+}
 
 const serializeContact = (c: Contact) => ({
   id: c.id,
@@ -806,6 +844,10 @@ export function registerApiRoutes(
     const nextWaba = givenWaba ?? (samePhone ? auth.tenant.waWabaId : null);
     const wabaChanged = nextWaba !== auth.tenant.waWabaId;
 
+    // Moving off a business account: stop Meta pushing its webhooks at us. Must happen
+    // while we still hold the OLD token.
+    if (wabaChanged) await releaseWabaIfUnused(auth.tenant, auth.tenant.waWabaId);
+
     // A phone number routes to exactly one tenant.
     await db.tenant.updateMany({
       where: { waPhoneNumberId: newPhone, NOT: { id: auth.tenant.id } },
@@ -855,6 +897,11 @@ export function registerApiRoutes(
       await subscribeAppToWaba(wabaId.trim(), token);
       const info = await fetchNumberInfo(phoneNumberId.trim(), token);
       const wabaChanged = wabaId.trim() !== auth.tenant.waWabaId;
+
+      // Switching business accounts: release the old one while we still hold its token.
+      // (The new WABA was subscribed above, with the new token.)
+      if (wabaChanged) await releaseWabaIfUnused(auth.tenant, auth.tenant.waWabaId);
+
       await db.tenant.updateMany({
         where: { waPhoneNumberId: phoneNumberId.trim(), NOT: { id: auth.tenant.id } },
         data: { waPhoneNumberId: null },
@@ -870,13 +917,32 @@ export function registerApiRoutes(
       });
       // Approvals belong to the old WABA and are worthless on the new one.
       const templatesReset = wabaChanged ? await resetTemplatesForNewWaba(auth.tenant.id) : 0;
+
+      /**
+       * Coexistence onboarding isn't finished until these two syncs are kicked off.
+       * Meta gives us 24 hours, after which the customer has to be offboarded and redo
+       * the whole flow — so a connection that looks fine today can silently expire.
+       * Best-effort: the credentials are already saved, and failing here would strand
+       * the tenant in a worse state than a missing contact list.
+       */
+      const [contactsSync, historySync] = await Promise.all([
+        startCoexistenceSync(phoneNumberId.trim(), token, "smb_app_state_sync"),
+        startCoexistenceSync(phoneNumberId.trim(), token, "history"),
+      ]);
+      const syncStarted = Boolean(contactsSync && historySync);
+      if (!syncStarted) {
+        console.warn(
+          `[whatsapp] coexistence sync incomplete for tenant ${auth.tenant.id} (contacts=${contactsSync}, history=${historySync}) — Meta requires both within 24h`,
+        );
+      }
+
       await audit(
         auth.tenant.id,
         auth.user.id,
         "whatsapp.connect",
-        `embedded:${info.number}${wabaChanged ? ` (waba changed, ${templatesReset} templates reset)` : ""}`,
+        `embedded:${info.number}${wabaChanged ? ` (waba changed, ${templatesReset} templates reset)` : ""}${syncStarted ? "" : " (coexistence sync INCOMPLETE)"}`,
       );
-      return { ok: true, number: info.number, name: info.name, templatesReset };
+      return { ok: true, number: info.number, name: info.name, templatesReset, syncStarted };
     } catch (err) {
       if (err instanceof EmbeddedSignupError) {
         return reply.code(400).send({ error: err.message });
@@ -898,6 +964,11 @@ export function registerApiRoutes(
       return reply.code(400).send({ error: "WhatsApp isn't connected." });
     }
     const previous = auth.tenant.waDisplayPhone ?? auth.tenant.waPhoneNumberId;
+
+    // BEFORE nulling the token — it's the only thing that can authorise this, so once
+    // the credentials are gone the subscription would leak forever.
+    const unsubscribed = await releaseWabaIfUnused(auth.tenant, auth.tenant.waWabaId);
+
     await db.tenant.update({
       where: { id: auth.tenant.id },
       data: {
@@ -910,8 +981,13 @@ export function registerApiRoutes(
       },
     });
     const templatesReset = await resetTemplatesForNewWaba(auth.tenant.id);
-    await audit(auth.tenant.id, auth.user.id, "whatsapp.disconnect", previous);
-    return { ok: true, templatesReset };
+    await audit(
+      auth.tenant.id,
+      auth.user.id,
+      "whatsapp.disconnect",
+      `${previous}${unsubscribed ? " (unsubscribed from WABA)" : ""}`,
+    );
+    return { ok: true, templatesReset, unsubscribed };
   });
 
   // ---- Knowledge base (RAG) ----
@@ -1064,7 +1140,10 @@ export function registerApiRoutes(
     const auth = await requireAuth(req, reply);
     if (!auth) return;
     const contacts = await db.contact.findMany({
-      where: { tenantId: auth.tenant.id, isSimulated: false },
+      // Only actual conversations. Coexistence imports the owner's whole WhatsApp
+      // address book, and without this the inbox would fill with hundreds of people
+      // who have never sent a message. They still appear under Contacts.
+      where: { tenantId: auth.tenant.id, isSimulated: false, messages: { some: {} } },
       include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
       orderBy: { updatedAt: "desc" },
     });

@@ -485,7 +485,7 @@ const PLANS = [
   {
     tier: "starter",
     name: "Starter",
-    priceKes: "2,500",
+    priceKes: "3,000",
     blurb: "For solo businesses starting with WhatsApp automation.",
     convos: "150 conversations / month",
     popular: false,
@@ -495,7 +495,7 @@ const PLANS = [
     name: "Growth",
     priceKes: "7,500",
     blurb: "For busy teams handling more leads and payments.",
-    convos: "750 conversations / month",
+    convos: "500 conversations / month",
     popular: true,
   },
   {
@@ -503,7 +503,7 @@ const PLANS = [
     name: "Pro",
     priceKes: "20,000",
     blurb: "For higher-volume businesses and larger teams.",
-    convos: "3,000 conversations / month",
+    convos: "1,500 conversations / month",
     popular: false,
   },
 ];

@@ -16,7 +16,7 @@ export async function describeImage(bytes: Buffer, mimeType: string): Promise<st
   if (!SUPPORTED.has(mimeType)) return null;
 
   const response = await client.messages.create({
-    model: config.ROUTER_MODEL,
+    model: config.FAST_MODEL,
     max_tokens: 200,
     messages: [
       {

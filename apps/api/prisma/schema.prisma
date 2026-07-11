@@ -110,13 +110,21 @@ model Tenant {
 // pricing. Split by model so the cheap router vs the reply model are costed
 // separately (cost tiering).
 model Usage {
-  id           String @id @default(cuid())
-  tenantId     String
-  day          String // "YYYY-MM-DD"
-  model        String @default("") // the model id these tokens were spent on
-  inputTokens  Int    @default(0)
-  outputTokens Int    @default(0)
-  llmCalls     Int    @default(0)
+  id       String @id @default(cuid())
+  tenantId String
+  day      String // "YYYY-MM-DD"
+  model    String @default("") // the model id these tokens were spent on
+
+  // Token classes are metered separately because they are billed at different
+  // rates: a cache read costs 0.1x base input, a 5m write 1.25x, a 1h write 2x.
+  // Lumping them into one figure (as this table used to) makes cached traffic
+  // look 10x more expensive than it is and hides whether caching works at all.
+  inputTokens        Int @default(0) // base input: neither cached nor cache-written
+  outputTokens       Int @default(0)
+  cacheWrite5mTokens Int @default(0)
+  cacheWrite1hTokens Int @default(0)
+  cacheReadTokens    Int @default(0)
+  llmCalls           Int @default(0)
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 

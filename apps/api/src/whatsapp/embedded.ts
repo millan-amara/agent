@@ -43,6 +43,75 @@ export async function subscribeAppToWaba(wabaId: string, token: string): Promise
   }
 }
 
+/**
+ * The inverse: tells Meta to stop delivering this WABA's webhooks to our app.
+ *
+ * Without this, disconnecting leaves us subscribed forever — Meta keeps POSTing the
+ * customer's messages, they match no tenant, and they're dropped into a black hole.
+ * Worse, disconnect discards the access token, so this call is only possible BEFORE
+ * the credentials are cleared.
+ *
+ * Best-effort by design: returns false rather than throwing. A connection made through
+ * the manual form was never subscribed in the first place, and a revoked token can't
+ * unsubscribe — neither should be able to trap someone in a half-connected state.
+ */
+export async function unsubscribeAppFromWaba(wabaId: string, token: string): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${GRAPH}/${wabaId}/subscribed_apps`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      console.warn(`[whatsapp] could not unsubscribe from WABA ${wabaId}: ${await res.text()}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(`[whatsapp] unsubscribe from WABA ${wabaId} failed:`, err);
+    return false;
+  }
+}
+
+/**
+ * Coexistence onboarding requires the provider to kick off two syncs once Embedded
+ * Signup completes — the customer's contacts and their message history.
+ *
+ * This is not optional housekeeping. Meta: "you have 24 hours to synchronize their
+ * contacts and messaging history, otherwise they must be offboarded and they must
+ * complete the flow again." We weren't calling either, so every coexistence onboard
+ * was on a 24-hour fuse.
+ *
+ * NOTE: we deliberately do NOT call /{phone-number-id}/register here. For coexistence
+ * Meta says to "skip the phone number registration step, as the number is already
+ * registered" — the number stays live on the WhatsApp Business app. Registering would
+ * be wrong, and needs a two-step PIN we have no business asking for.
+ *
+ * Best-effort: a failure must not roll back a connection that otherwise succeeded.
+ * The data itself arrives later over the `history` and `smb_app_state_sync` webhooks.
+ */
+export async function startCoexistenceSync(
+  phoneNumberId: string,
+  token: string,
+  syncType: "smb_app_state_sync" | "history",
+): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(`${GRAPH}/${phoneNumberId}/smb_app_data`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", sync_type: syncType }),
+    });
+    if (!res.ok) {
+      console.warn(`[whatsapp] ${syncType} sync failed for ${phoneNumberId}: ${await res.text()}`);
+      return null;
+    }
+    const data = (await res.json()) as { request_id?: string };
+    return data.request_id ?? null;
+  } catch (err) {
+    console.warn(`[whatsapp] ${syncType} sync errored for ${phoneNumberId}:`, err);
+    return null;
+  }
+}
+
 /** Reads the display number + verified name for confirmation. */
 export async function fetchNumberInfo(
   phoneNumberId: string,

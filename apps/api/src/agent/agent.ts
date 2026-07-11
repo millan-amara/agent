@@ -5,8 +5,7 @@ import { publish } from "../events.js";
 import type { MessageSender } from "../whatsapp/sender.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { buildTools, executeTool, tenantCapabilities, type ToolContext } from "./tools.js";
-import { recordUsage, withinDailyReplyBudget } from "./usage.js";
-import { classifyTier, modelForTier } from "./router.js";
+import { recordUsage, withinMonthlyCallBudget } from "./usage.js";
 import { billingStatus, canSend, monthStart } from "../billing.js";
 
 // Bound each request so a degraded endpoint can't hang a queue worker (the SDK
@@ -15,6 +14,12 @@ const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, timeout: 60_000
 
 const MAX_TOOL_ITERATIONS = 8;
 const HISTORY_LIMIT = 40;
+
+/**
+ * Both cache breakpoints (system+tools, and the auto one on history) must use
+ * the SAME ttl — mixing them on one request is a 400 from the API.
+ */
+const CACHE_TTL = config.CACHE_TTL;
 
 // Abuse / cost guards. One hostile contact can amplify a flood of inbound
 // messages into many model calls (a router classification plus up to
@@ -28,6 +33,19 @@ const RATE_WINDOW_MS = 10 * 60 * 1000;
 const MAX_INBOUND_PER_WINDOW = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_AI_REPLIES_PER_DAY = 50;
+
+/**
+ * Turns one contact may consume in a calendar month.
+ *
+ * This is the one that closes the metering hole. Billing counts a contact with
+ * an inbound message as ONE conversation for the month, however much they then
+ * say — but we pay per turn. Without this, a single contact pacing under the
+ * daily cap could run 50 replies a day for a month (~1,500 turns, well over a
+ * thousand shillings) while the tenant is billed for a single conversation
+ * worth KES 16.67 on Starter. 150/month is ~5 a day sustained: far beyond any
+ * genuine back-and-forth, so a real customer will never touch it.
+ */
+const MAX_AI_REPLIES_PER_MONTH = 150;
 
 /**
  * The core loop: load tenant + contact + history, ask Claude with CRM tools,
@@ -82,11 +100,11 @@ async function runAgentTurnInner(
   if (!canSend(billing.state)) return;
   if (billing.state === "over_limit" && contact.createdAt >= monthStart()) return;
 
-  // Tenant-wide daily cost circuit-breaker (tight during trial). Bounds total
-  // spend across ALL conversations, so spreading a flood over many contacts
-  // can't run up the bill either. Skip silently once exhausted.
-  if (!(await withinDailyReplyBudget(tenant))) {
-    console.log(`[budget] ${tenant.name}: daily AI reply budget reached — turn skipped`);
+  // Tenant-wide cost circuit-breaker, sized to the tier they bought. Bounds total
+  // spend across ALL conversations, so spreading a flood over many contacts can't
+  // run up the bill either. Skip silently once exhausted.
+  if (!(await withinMonthlyCallBudget(tenant))) {
+    console.log(`[budget] ${tenant.name}: monthly AI call budget reached — turn skipped`);
     return;
   }
 
@@ -161,26 +179,51 @@ async function runAgentTurnInner(
       });
       return;
     }
+
+    // The metering-hole guard: this contact is ONE billed conversation for the
+    // month no matter how many turns it takes, so cap the turns it can take.
+    const repliesThisMonth = await db.message.count({
+      where: {
+        contactId,
+        direction: "out",
+        author: "ai",
+        createdAt: { gte: monthStart() },
+      },
+    });
+    if (repliesThisMonth >= MAX_AI_REPLIES_PER_MONTH) {
+      await executeTool(ctx, "escalate_to_human", {
+        reason: `Conversation reached the monthly AI-reply limit (${MAX_AI_REPLIES_PER_MONTH}) — paused for a human to review`,
+      });
+      return;
+    }
   }
 
   const caps = await tenantCapabilities(tenant);
   const tools = buildTools(stages, caps);
 
-  // Cost tiering: a cheap router picks the model. Simple inbound turns go to the
-  // router model; follow-ups and anything non-trivial use the reply model.
-  const tier =
-    !opts.followUpNote && lastInbound
-      ? await classifyTier(tenant.id, lastInbound.text)
-      : "complex";
-  const model = modelForTier(tier);
+  // Every turn goes to the reply model. There used to be a cheap-router tier in
+  // front of this (a Haiku classifier that sent "simple" turns to Haiku), but it
+  // was measured and it saved nothing: Haiku's 4,096-token minimum cacheable
+  // prefix is larger than our system+tools, so a Haiku reply could never hit the
+  // cache and cost about the same as a cache-warm Sonnet reply — while adding a
+  // classifier round-trip to every reply and answering 40% of turns with a
+  // weaker model. Cost was within 1%; latency and quality were strictly worse.
+  const model = config.REPLY_MODEL;
 
   // The system prompt is byte-stable per tenant — cache it. Tools render
   // before system, so this one breakpoint caches tools + system together.
+  //
+  // 1h, not the 5m default: WhatsApp conversations are paced by humans, and a
+  // typical tenant sees a handful of conversations a day. At 5m the cache had
+  // almost always expired before the next turn, so quiet tenants — most Kenyan
+  // SMEs — were re-reading the whole prefix at full price while paying the cache
+  // write premium for nothing. A 1h write costs 2x base input (vs 1.25x) and a
+  // read costs 0.1x, so this pays for itself after two reads.
   const system: Anthropic.TextBlockParam[] = [
     {
       type: "text",
       text: buildSystemPrompt(tenant, stages, caps),
-      cache_control: { type: "ephemeral" },
+      cache_control: { type: "ephemeral", ttl: CACHE_TTL },
     },
   ];
 
@@ -191,6 +234,11 @@ async function runAgentTurnInner(
       system,
       tools,
       messages,
+      // No top-level (automatic) cache_control here on purpose. Caching the
+      // conversation history as well was measured on realistically-paced
+      // conversations and came out a wash — each turn writes a fresh history
+      // block at the write premium, which cancels the base-input it saves. It
+      // is not worth the extra breakpoint.
     });
     await recordUsage(tenant.id, model, response.usage);
 

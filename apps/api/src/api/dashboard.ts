@@ -4,6 +4,7 @@ import { db } from "../db.js";
 import { config } from "../config.js";
 import { requireAuth } from "../auth/auth.js";
 import { usdFor, usdToKes } from "../costs.js";
+import { PLANS, activeConversationCount, type TierId } from "../billing.js";
 
 /** Constant-time compare of a request-supplied token against the configured one. */
 function tokenMatches(provided: unknown, expected: string): boolean {
@@ -27,45 +28,94 @@ export function registerDashboardRoutes(app: FastifyInstance): void {
     }
     const monthStart = new Date().toISOString().slice(0, 8) + "01";
     const rows = await db.usage.findMany({ where: { day: { gte: monthStart } } });
-    const tenants = await db.tenant.findMany({ select: { id: true, name: true, plan: true } });
-    const nameById = new Map(tenants.map((t) => [t.id, { name: t.name, plan: t.plan }]));
+    const tenants = await db.tenant.findMany({
+      select: { id: true, name: true, plan: true, planTier: true },
+    });
 
-    const byTenant = new Map<
-      string,
-      { name: string; plan: string; usd: number; inputTokens: number; outputTokens: number; llmCalls: number; byModel: Record<string, number> }
-    >();
-    for (const r of rows) {
-      const meta = nameById.get(r.tenantId);
-      if (!meta) continue;
-      const usd = usdFor(r.model, r.inputTokens, r.outputTokens);
-      const cur =
-        byTenant.get(r.tenantId) ??
-        { name: meta.name, plan: meta.plan, usd: 0, inputTokens: 0, outputTokens: 0, llmCalls: 0, byModel: {} };
-      cur.usd += usd;
-      cur.inputTokens += r.inputTokens;
-      cur.outputTokens += r.outputTokens;
-      cur.llmCalls += r.llmCalls;
-      cur.byModel[r.model] = (cur.byModel[r.model] ?? 0) + usd;
-      byTenant.set(r.tenantId, cur);
+    interface Agg {
+      name: string;
+      plan: string;
+      planTier: TierId | null;
+      usd: number;
+      llmCalls: number;
+      cacheReadTokens: number;
+      /** Everything that COULD have been served from cache: reads + writes. */
+      cacheableTokens: number;
+      byModel: Record<string, number>;
+    }
+    const byTenant = new Map<string, Agg>();
+
+    for (const t of tenants) {
+      byTenant.set(t.id, {
+        name: t.name,
+        plan: t.plan,
+        planTier: (t.planTier as TierId | null) ?? null,
+        usd: 0,
+        llmCalls: 0,
+        cacheReadTokens: 0,
+        cacheableTokens: 0,
+        byModel: {},
+      });
     }
 
-    return {
-      period: monthStart,
-      tenants: [...byTenant.entries()]
-        .map(([id, v]) => ({
+    for (const r of rows) {
+      const cur = byTenant.get(r.tenantId);
+      if (!cur) continue;
+      const usd = usdFor(r.model, r);
+      cur.usd += usd;
+      cur.llmCalls += r.llmCalls;
+      cur.cacheReadTokens += r.cacheReadTokens;
+      cur.cacheableTokens += r.cacheReadTokens + r.cacheWrite5mTokens + r.cacheWrite1hTokens;
+      cur.byModel[r.model] = (cur.byModel[r.model] ?? 0) + usd;
+    }
+
+    // The number that actually decides whether a tenant is profitable: LLM cost
+    // per billed conversation, against what that tier charges per conversation.
+    // A tenant can look cheap in absolute KES and still be underwater, because
+    // we meter conversations but pay per turn.
+    const out = await Promise.all(
+      [...byTenant.entries()].map(async ([id, v]) => {
+        const costKes = usdToKes(v.usd);
+        const conversations = await activeConversationCount(id);
+        const plan = v.planTier ? PLANS[v.planTier] : undefined;
+        const revenuePerConvKes = plan ? plan.priceKes / plan.convLimit : null;
+        const costPerConvKes = conversations > 0 ? costKes / conversations : null;
+
+        return {
           tenantId: id,
           name: v.name,
           plan: v.plan,
+          tier: v.planTier,
           llmCalls: v.llmCalls,
-          inputTokens: v.inputTokens,
-          outputTokens: v.outputTokens,
+          conversations,
           costUsd: Number(v.usd.toFixed(4)),
-          costKes: Math.round(usdToKes(v.usd)),
+          costKes: Math.round(costKes),
+          costPerConvKes: costPerConvKes === null ? null : Number(costPerConvKes.toFixed(2)),
+          // What this tier earns per conversation AT ITS CAP — the ceiling the
+          // cost above has to stay under. Negative headroom = losing money.
+          revenuePerConvKes:
+            revenuePerConvKes === null ? null : Number(revenuePerConvKes.toFixed(2)),
+          marginPerConvKes:
+            revenuePerConvKes === null || costPerConvKes === null
+              ? null
+              : Number((revenuePerConvKes - costPerConvKes).toFixed(2)),
+          // 0 means prompt caching is doing nothing — either below the model's
+          // minimum cacheable prefix, or the 5m TTL expiring between turns.
+          cacheHitRate:
+            v.cacheableTokens > 0
+              ? Number((v.cacheReadTokens / v.cacheableTokens).toFixed(3))
+              : 0,
           byModelKes: Object.fromEntries(
             Object.entries(v.byModel).map(([m, usd]) => [m, Math.round(usdToKes(usd))]),
           ),
-        }))
-        .sort((a, b) => b.costUsd - a.costUsd),
+        };
+      }),
+    );
+
+    return {
+      period: monthStart,
+      usdToKes: config.USD_TO_KES,
+      tenants: out.sort((a, b) => b.costUsd - a.costUsd),
     };
   });
 

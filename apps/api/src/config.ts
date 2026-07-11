@@ -9,8 +9,32 @@ const schema = z.object({
   WA_VERIFY_TOKEN: z.string().default("azayon-dev-verify"),
   WA_APP_SECRET: z.string().optional(),
   WA_WABA_ID: z.string().optional(),
-  REPLY_MODEL: z.string().default("claude-opus-4-8"),
-  ROUTER_MODEL: z.string().default("claude-haiku-4-5"),
+  /**
+   * Reply model. Sonnet 5 replaced Opus 4.8 here after a 10-conversation eval
+   * showed parity on every quality dimension we score (lead capture, pipeline
+   * advancement, never inventing a price or an appointment slot) at ~28% lower
+   * cost per conversation. Opus 4.8 remains a drop-in via env if that regresses.
+   */
+  REPLY_MODEL: z.string().default("claude-sonnet-5"),
+  /**
+   * Cheap model for auxiliary work that isn't a customer reply — currently image
+   * captioning (vision.ts). Was ROUTER_MODEL, when a classifier tier used it to
+   * answer "simple" turns; that tier was removed after it measured as a
+   * pessimization (see the comment in agent.ts).
+   */
+  FAST_MODEL: z.string().default("claude-haiku-4-5"),
+  /**
+   * Prompt-cache lifetime for the agent's system+tools prefix.
+   *
+   * "1h", not the API's 5m default: WhatsApp turns are paced by humans replying
+   * in their own time, so at 5m the cache has usually expired before the next
+   * message — and because cache_control is set, a miss still pays the write
+   * premium and gets nothing back. Benchmarked on conversations with 6-minute
+   * gaps: at 5m the prefix was WRITTEN TWICE (4,848 cache-write tokens) where
+   * 1h wrote it once (2,424) and read it back at 0.1x. 1h writes cost 2x base
+   * input vs 5m's 1.25x, so it pays off from the second read onward.
+   */
+  CACHE_TTL: z.enum(["5m", "1h"]).default("1h"),
   PORT: z.coerce.number().default(3001),
   DEBOUNCE_SECONDS: z.coerce.number().default(5),
   // Production infra (all optional — absence selects the in-process dev path).

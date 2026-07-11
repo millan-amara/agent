@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "simulator": "tsx src/simulator.ts",
+    "eval": "tsx src/eval.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate"
   },

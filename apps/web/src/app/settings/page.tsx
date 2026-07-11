@@ -439,6 +439,21 @@ export default function SettingsPage() {
                 {tenant.waConnected && <HealthPill health={tenant.health} />}
                 {connectMsg && <p className="mt-1 text-sm text-success">{connectMsg}</p>}
 
+                {/* Moving a number to a different business account is done entirely
+                    through Embedded Signup — Meta re-associates it, and nothing needs
+                    releasing on our side. Two-step verification is the one thing that
+                    silently blocks it. */}
+                {tenant.waConnected && (
+                  <p className="mt-3 rounded-card bg-canvas px-3 py-2 text-xs text-muted">
+                    <span className="font-medium text-ink">Moving this number to a different
+                    Facebook business account?</span>{" "}
+                    Just run the connect below again and pick the new account — the number
+                    doesn&apos;t need releasing first, and the display name and quality rating
+                    carry over. Turn off two-step verification on the number first, or Meta will
+                    refuse.
+                  </p>
+                )}
+
                 <div className="mt-4">
                   <EmbeddedSignup
                     onConnected={(label) => {

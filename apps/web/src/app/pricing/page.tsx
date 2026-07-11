@@ -26,7 +26,7 @@ const PLANS = [
   {
     tier: "starter",
     name: "Starter",
-    priceKes: "2,500",
+    priceKes: "3,000",
     blurb: "For solo businesses starting with WhatsApp automation.",
     convos: "150 conversations / month",
     seats: "1 team member",
@@ -37,7 +37,7 @@ const PLANS = [
     name: "Growth",
     priceKes: "7,500",
     blurb: "For busy teams handling more leads and payments.",
-    convos: "750 conversations / month",
+    convos: "500 conversations / month",
     seats: "Up to 5 team members",
     popular: true,
   },
@@ -46,7 +46,7 @@ const PLANS = [
     name: "Pro",
     priceKes: "20,000",
     blurb: "For higher-volume businesses and larger teams.",
-    convos: "3,000 conversations / month",
+    convos: "1,500 conversations / month",
     seats: "Unlimited team members",
     popular: false,
   },
@@ -67,7 +67,7 @@ const COMPARISON: { group: string; rows: Row[] }[] = [
   {
     group: "Usage",
     rows: [
-      { label: "Conversations / month", values: ["150", "750", "3,000"] },
+      { label: "Conversations / month", values: ["150", "500", "1,500"] },
       { label: "Team members", values: ["1", "Up to 5", "Unlimited"] },
       { label: "WhatsApp Business connection", values: [true, true, true] },
     ],
@@ -112,7 +112,7 @@ const FAQS = [
   },
   {
     q: "Is there a free trial?",
-    a: "Yes. Every plan starts with a 7-day free trial of the full Service — up to 15 conversations — and no card is required to begin.",
+    a: "Yes. Every plan starts with a 7-day free trial of the full Service — up to 10 conversations — and no card is required to begin.",
   },
   {
     q: "Can I change or cancel my plan?",

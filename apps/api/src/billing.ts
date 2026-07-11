@@ -30,14 +30,34 @@ export interface PlanDef {
  * Conversation cap during the free trial. Keeps a trial from running an entire
  * business for a week — once hit, the trial goes `over_limit` (same enforcement
  * as a paid plan over its cap: the AI stops auto-replying to new-this-month
- * contacts) until the tenant subscribes.
+ * contacts) until the tenant subscribes. 10 conversations is enough to see real
+ * leads captured (~KES 68 of LLM cost) without funding a free business.
  */
-export const TRIAL_CONV_LIMIT = 15;
+export const TRIAL_CONV_LIMIT = 10;
 
+/**
+ * The tiers. Measured LLM cost is ~KES 6.8 per 6-turn conversation, and it is
+ * FLAT — it does not fall with volume. So the price per conversation must never
+ * approach it. The previous ladder discounted per-conversation price as volume
+ * rose (Starter 16.67 → Growth 10.00 → Pro 6.67/conv) with no cost curve behind
+ * it, which put Pro underwater at its own cap: the best customers were the least
+ * profitable. Caps are now set so every tier clears ~15 KES/conversation or more.
+ *
+ * IMPORTANT: `priceKes` is for display and margin maths only. What a subscriber
+ * is actually CHARGED is whatever the matching Paystack plan (`planCode`) says —
+ * createSubscriptionCheckout sends the plan code, not an amount. Change a price
+ * here and you must change it in the Paystack dashboard too, or the two silently
+ * disagree.
+ */
 export const PLANS: Record<TierId, PlanDef> = {
-  starter: { tier: "starter", name: "Starter", priceKes: 2_500, convLimit: 150, planCode: config.PAYSTACK_PLAN_STARTER },
-  growth: { tier: "growth", name: "Growth", priceKes: 7_500, convLimit: 750, planCode: config.PAYSTACK_PLAN_GROWTH },
-  pro: { tier: "pro", name: "Pro", priceKes: 20_000, convLimit: 3_000, planCode: config.PAYSTACK_PLAN_PRO },
+  // 20.00 KES/conversation → ~66% margin
+  starter: { tier: "starter", name: "Starter", priceKes: 3_000, convLimit: 150, planCode: config.PAYSTACK_PLAN_STARTER },
+  // 15.00 KES/conversation → ~55% margin
+  growth: { tier: "growth", name: "Growth", priceKes: 7_500, convLimit: 500, planCode: config.PAYSTACK_PLAN_GROWTH },
+  // 13.33 KES/conversation → ~49% margin. Deliberately the cheapest per
+  // conversation: the ladder must reward volume, or upgrading reads as a
+  // downgrade and no one moves up.
+  pro: { tier: "pro", name: "Pro", priceKes: 20_000, convLimit: 1_500, planCode: config.PAYSTACK_PLAN_PRO },
 };
 
 export type BillingState = "trial" | "active" | "over_limit" | "readonly";

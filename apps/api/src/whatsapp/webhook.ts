@@ -12,6 +12,22 @@ import { PLANS, disableSubscription, type TierId } from "../billing.js";
 import { audit } from "../audit.js";
 import { publish } from "../events.js";
 import { downloadMedia } from "./media.js";
+import {
+  ingestContacts,
+  ingestHistory,
+  ingestMessageEchoes,
+  type StateSyncValue,
+  type HistoryValue,
+  type MessageEchoesValue,
+} from "./coexistence.js";
+
+/** Inbound webhooks identify a tenant by the business phone number they arrived on. */
+async function tenantForPhoneNumberId(phoneNumberId?: string): Promise<Tenant | null> {
+  if (!phoneNumberId) return null;
+  const tenant = await db.tenant.findFirst({ where: { waPhoneNumberId: phoneNumberId } });
+  if (!tenant) console.warn(`[webhook] no tenant for phone_number_id=${phoneNumberId}`);
+  return tenant;
+}
 import { recordQuality } from "./quality.js";
 import { transcribeAudio } from "../transcribe.js";
 import { describeImage } from "../vision.js";
@@ -174,6 +190,39 @@ async function processPayload(queue: QueueDriver, payload: unknown): Promise<voi
         await handleQualityUpdate(entry.id, change.value as QualityUpdateValue);
         continue;
       }
+      /**
+       * Coexistence. These three carry the business's existing WhatsApp life:
+       * their address book, up to 180 days of past conversations, and — crucially —
+       * the messages the owner sends from the WhatsApp Business app on their own
+       * phone. None of them go through the agent: history must not wake the AI, and
+       * an echo is the owner speaking, not a customer.
+       */
+      if (
+        change.field === "history" ||
+        change.field === "smb_app_state_sync" ||
+        change.field === "smb_message_echoes"
+      ) {
+        const coexTenant = await tenantForPhoneNumberId(change.value?.metadata?.phone_number_id);
+        if (!coexTenant) continue;
+
+        if (change.field === "smb_app_state_sync") {
+          const n = await ingestContacts(coexTenant, change.value as StateSyncValue);
+          if (n) console.log(`[coexistence] ${n} contact(s) synced for ${coexTenant.name}`);
+        } else if (change.field === "history") {
+          const { imported, progress } = await ingestHistory(
+            coexTenant,
+            change.value as HistoryValue,
+          );
+          console.log(
+            `[coexistence] history chunk for ${coexTenant.name}: +${imported} message(s), ${progress}% complete`,
+          );
+        } else {
+          const n = await ingestMessageEchoes(coexTenant, change.value as MessageEchoesValue);
+          if (n) console.log(`[coexistence] ${n} owner message(s) echoed from the WhatsApp app`);
+        }
+        continue;
+      }
+
       const value = change.value;
       if (!value?.messages && !value?.statuses) continue;
 

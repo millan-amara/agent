@@ -299,15 +299,32 @@ export async function executeTool(
   switch (name) {
     case "update_lead": {
       const data: { name?: string; fields?: string } = {};
-      if (typeof input.name === "string" && input.name.trim()) {
-        data.name = input.name.trim().slice(0, 120);
+      const rawFields =
+        input.fields && typeof input.fields === "object" && !Array.isArray(input.fields)
+          ? { ...(input.fields as Record<string, unknown>) }
+          : undefined;
+
+      // The model sometimes passes the customer's name as a custom field rather
+      // than in the dedicated `name` param. Left in `fields`, the contact's name
+      // column stays null and the lead shows up anonymous in the inbox and CRM,
+      // so promote it to the real column and never keep it as a custom field.
+      const nameInput =
+        typeof input.name === "string" && input.name.trim()
+          ? input.name
+          : typeof rawFields?.name === "string"
+            ? rawFields.name
+            : undefined;
+      if (rawFields) delete rawFields.name;
+
+      if (nameInput?.trim()) {
+        data.name = nameInput.trim().slice(0, 120);
       }
-      if (input.fields && typeof input.fields === "object" && !Array.isArray(input.fields)) {
+      if (rawFields) {
         const existing = JSON.parse(ctx.contact.fields) as Record<string, unknown>;
         const merged: Record<string, unknown> = { ...existing };
         // The model relays attacker-controlled text here — persist only bounded
         // scalars under bounded keys, and cap how many fields can accumulate.
-        for (const [k, v] of Object.entries(input.fields as Record<string, unknown>)) {
+        for (const [k, v] of Object.entries(rawFields)) {
           if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") continue;
           const key = k.slice(0, MAX_LEAD_KEY_LEN);
           if (!(key in merged) && Object.keys(merged).length >= MAX_LEAD_FIELDS) continue;

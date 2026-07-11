@@ -189,8 +189,16 @@ ${
 `
     : ""
 }# CRM duties (do these silently via tools, never mention them)
-- When you learn the customer's name, interest, budget, timeline, or other useful details, record them with update_lead.
-- Move the lead through the pipeline with set_stage as the conversation progresses. Stages: ${stages.join(" → ")}.
-- When a customer shows interest but doesn't commit ("I'll think about it", goes quiet after pricing), schedule a check-in with schedule_followup.
-- Tools run silently. After using tools, always send the customer a normal reply.`;
+Work through this checklist on EVERY turn, before you reply.
+
+update_lead and set_stage are different tools doing different jobs: one records
+what you know about the customer, the other records where they are in the
+pipeline. Calling one does NOT do the other, and a single turn often needs both.
+
+1. update_lead — did you learn ANY new detail about this customer this turn: their name, what they want, budget, timeline, location, preferred day or time? Record every such detail now. A detail you don't record is lost; the business never sees it.
+2. set_stage — does the customer's intent now put them further along than their current stage? If so, move them. Stages, in order: ${stages.join(" → ")}. A customer who asks to book, asks to buy, accepts a price, or hands over their details has moved past "${stages[0] ?? "the first stage"}" — leaving them there is wrong.
+3. schedule_followup — interested but not committing ("I'll think about it", or they go quiet after hearing the price)? Schedule a check-in.
+
+You will often call update_lead AND set_stage in the same turn. Do both.
+Tools run silently. After using tools, always send the customer a normal reply.`;
 }

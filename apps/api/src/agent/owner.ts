@@ -3,7 +3,7 @@ import type { Contact, Tenant } from "@prisma/client";
 import { config } from "../config.js";
 import { db } from "../db.js";
 import type { MessageSender } from "../whatsapp/sender.js";
-import { recordUsage, withinDailyReplyBudget } from "./usage.js";
+import { recordUsage, withinMonthlyCallBudget } from "./usage.js";
 import { OWNER_TOOLS, executeOwnerTool } from "./ownerTools.js";
 
 /**
@@ -83,10 +83,10 @@ export async function runOwnerTurn(tenantId: string, sender: MessageSender): Pro
     return;
   }
 
-  // Tenant-wide daily cost budget applies to owner turns too (they use the
+  // The tenant-wide cost budget applies to owner turns too (they use the
   // reply model). Skip silently once exhausted.
-  if (!(await withinDailyReplyBudget(tenant))) {
-    console.log(`[owner] ${tenant.name}: daily reply budget reached — skipping owner turn`);
+  if (!(await withinMonthlyCallBudget(tenant))) {
+    console.log(`[owner] ${tenant.name}: monthly call budget reached — skipping owner turn`);
     return;
   }
 

@@ -44,7 +44,7 @@ export const websiteSchema = {
 
 /** Plan pricing, mirrored from the pricing page, used to build the offer list. */
 const PLANS = [
-  { name: "Starter", price: "2500", description: "For solo businesses starting with WhatsApp automation." },
+  { name: "Starter", price: "3000", description: "For solo businesses starting with WhatsApp automation." },
   { name: "Growth", price: "7500", description: "For busy teams handling more leads and payments." },
   { name: "Pro", price: "20000", description: "For higher-volume businesses and larger teams." },
 ] as const;
@@ -65,7 +65,7 @@ export const softwareApplicationSchema = {
   offers: {
     "@type": "AggregateOffer",
     priceCurrency: "KES",
-    lowPrice: "2500",
+    lowPrice: "3000",
     highPrice: "20000",
     offerCount: PLANS.length,
     offers: PLANS.map((plan) => ({

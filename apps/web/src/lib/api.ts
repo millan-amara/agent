@@ -445,7 +445,14 @@ export const api = {
       body: JSON.stringify(body),
     }),
   connectWhatsAppEmbedded: (body: { code: string; phoneNumberId: string; wabaId: string }) =>
-    request<{ ok: true; number: string; name: string; templatesReset: number }>("/api/tenant/whatsapp/embedded", {
+    request<{
+      ok: true;
+      number: string;
+      name: string;
+      templatesReset: number;
+      /** False if Meta rejected the contacts/history sync — onboarding expires in 24h. */
+      syncStarted: boolean;
+    }>("/api/tenant/whatsapp/embedded", {
       method: "POST",
       body: JSON.stringify(body),
     }),
