@@ -24,7 +24,19 @@ const DICT: Record<string, { en: string; sw: string }> = {
   "nav.simulator": { en: "Simulator", sw: "Jaribio" },
   "nav.billing": { en: "Billing", sw: "Malipo" },
   "nav.settings": { en: "Settings", sw: "Mipangilio" },
+  "nav.more": { en: "More", sw: "Zaidi" },
+  "nav.install": { en: "Install app", sw: "Sakinisha programu" },
   "nav.logout": { en: "Log out", sw: "Toka" },
+  // pwa install
+  "install.title": { en: "Install Azayon", sw: "Sakinisha Azayon" },
+  "install.ios.step1": {
+    en: "Tap the Share button in Safari's toolbar.",
+    sw: "Gusa kitufe cha Share kwenye upau wa Safari.",
+  },
+  "install.ios.step2": {
+    en: 'Choose "Add to Home Screen".',
+    sw: 'Chagua "Add to Home Screen".',
+  },
   // dashboard
   "dash.title": { en: "Last 30 days", sw: "Siku 30 zilizopita" },
   "dash.subtitle": {

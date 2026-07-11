@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { NavShell } from "@/components/NavShell";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { LocaleProvider } from "@/lib/i18n";
 import { JsonLd } from "@/components/JsonLd";
 import { SITE } from "@/lib/site";
@@ -23,6 +24,13 @@ export const metadata: Metadata = {
   creator: SITE.legalName,
   publisher: SITE.legalName,
   category: "technology",
+  // iOS ignores the web manifest's standalone/name fields — these drive the
+  // "Add to Home Screen" launch behaviour on iPhone/iPad.
+  appleWebApp: {
+    capable: true,
+    title: SITE.name,
+    statusBarStyle: "default",
+  },
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
@@ -64,6 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Sitewide structured data: publisher + website, referenced by @id
             from per-page nodes (SoftwareApplication, FAQPage, Breadcrumb). */}
         <JsonLd schema={[organizationSchema, websiteSchema]} />
+        <ServiceWorkerRegister />
         <LocaleProvider>
           <NavShell>{children}</NavShell>
         </LocaleProvider>

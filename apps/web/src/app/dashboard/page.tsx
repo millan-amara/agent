@@ -60,19 +60,19 @@ export default function DashboardPage() {
 
       {/* Hero: the money metric leads, with a warm commerce accent. */}
       <div className="mb-4 grid gap-4 lg:grid-cols-3">
-        <div className="rounded-card bg-gradient-to-br from-primary-700 to-primary-800 p-5 text-white shadow-card lg:col-span-1">
+        <div className="rounded-card bg-gradient-to-br from-accent-500 to-accent-700 p-5 text-white shadow-card lg:col-span-1">
           <div className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-md bg-accent text-white shadow-card">
+            <span className="grid size-7 place-items-center rounded-md bg-white/15 text-white shadow-card">
               <Wallet className="size-4" strokeWidth={2.25} />
             </span>
-            <span className="text-xs font-semibold uppercase tracking-wide text-primary-100">
+            <span className="text-xs font-semibold uppercase tracking-wide text-accent-100">
               {t("dash.payments")}
             </span>
           </div>
           <div className="tnum mt-3 text-3xl font-semibold">
             KES {data.paidKes.toLocaleString()}
           </div>
-          <div className="mt-1 text-xs text-primary-100/80">collected this month</div>
+          <div className="mt-1 text-xs text-accent-100/80">collected this month</div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 lg:col-span-2 lg:grid-cols-3">

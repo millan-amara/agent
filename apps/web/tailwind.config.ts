@@ -31,10 +31,21 @@ const config: Config = {
         attention: "#D97706",
         attentionSoft: "#FEF3E2",
         // Orange — warm COMMERCE/urgency accent (overdue, trial/payment nudges,
-        // brand warmth). Distinct from `attention` so the two never blur.
+        // CTAs, brand warmth). Distinct from `attention` so the two never blur.
+        // Full tonal ramp; `deep`/`soft` kept as aliases for existing classes.
         accent: {
+          50: "#FFF7ED",
+          100: "#FFEDD5",
+          200: "#FED7AA",
+          300: "#FDBA74",
+          400: "#FB923C",
+          500: "#F97316",
+          600: "#EA580C",
+          700: "#C2410C",
+          800: "#9A3412",
+          900: "#7C2D12",
           DEFAULT: "#F97316",
-          deep: "#EA7A1A",
+          deep: "#C2410C",
           soft: "#FFF3E8",
         },
         warning: {

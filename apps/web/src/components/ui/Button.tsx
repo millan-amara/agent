@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "subtle" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "subtle" | "accent" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
 const base =
@@ -19,6 +19,7 @@ const variants: Record<ButtonVariant, string> = {
   secondary: "border border-line bg-white text-ink hover:bg-canvas",
   ghost: "text-muted hover:bg-canvas hover:text-ink",
   subtle: "bg-primary-soft text-primary-700 hover:bg-primary-100",
+  accent: "bg-accent-500 text-white hover:bg-accent-600 shadow-card",
   danger: "bg-danger text-white hover:bg-red-700 shadow-card",
 };
 

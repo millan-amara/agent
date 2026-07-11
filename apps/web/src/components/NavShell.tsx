@@ -15,6 +15,7 @@ import {
   CreditCard,
   Settings,
   LogOut,
+  Menu,
   AlertTriangle,
   MailWarning,
   Loader2,
@@ -26,6 +27,7 @@ import {
 import { api, AuthError, type Me } from "@/lib/api";
 import { useLocale } from "@/lib/i18n";
 import { Logo } from "@/components/Logo";
+import { InstallAppButton } from "@/components/InstallAppButton";
 
 type Tab = {
   href: string;
@@ -60,6 +62,7 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   const { t, locale, setLocale } = useLocale();
   const [me, setMe] = useState<Me | null>(null);
   const [checked, setChecked] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const isMarketing = pathname === "/" || MARKETING_PATHS.some((p) => pathname === p);
   const isPublic = isMarketing || PUBLIC_PATHS.some((p) => pathname.startsWith(p));
@@ -84,6 +87,9 @@ export function NavShell({ children }: { children: React.ReactNode }) {
       });
   }, [pathname]);
 
+  // Close the mobile "More" sheet whenever the route changes.
+  useEffect(() => setMoreOpen(false), [pathname]);
+
   if (isMarketing) return <>{children}</>;
   if (isPublic || isOnboarding) return <div className="h-dvh">{children}</div>;
   if (!checked) {
@@ -100,6 +106,12 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   const visible = TABS.filter((tab) => !tab.ownerOnly || me?.role === "owner");
   const mainTabs = visible.filter((tab) => tab.group === "main");
   const secondaryTabs = visible.filter((tab) => tab.group === "secondary");
+
+  // Mobile: a compact bottom bar of the primary tabs, with everything else
+  // (Invoices, Broadcasts, Contacts, Simulator, Billing, Settings) + Log out
+  // tucked behind a "More" sheet so nothing is unreachable on small screens.
+  const mobileBarTabs = visible.filter((tab) => !tab.mobileHidden && tab.group === "main");
+  const moreTabs = visible.filter((tab) => !mobileBarTabs.includes(tab));
 
   const NavLink = ({ tab }: { tab: Tab }) => {
     const active = pathname.startsWith(tab.href);
@@ -141,9 +153,12 @@ export function NavShell({ children }: { children: React.ReactNode }) {
           ))}
         </div>
 
+        {/* Renders nothing unless the PWA is installable and not yet installed. */}
+        <InstallAppButton variant="rail" />
+
         <button
           onClick={() => void logout()}
-          className="mx-3 mb-4 flex items-center gap-3 rounded-card px-3 py-2 text-left text-sm font-medium text-muted hover:bg-canvas hover:text-ink"
+          className="mx-3 mb-4 mt-0.5 flex items-center gap-3 rounded-card px-3 py-2 text-left text-sm font-medium text-muted hover:bg-canvas hover:text-ink"
         >
           <LogOut className="size-[18px] shrink-0" strokeWidth={2} />
           {t("nav.logout")}
@@ -157,27 +172,91 @@ export function NavShell({ children }: { children: React.ReactNode }) {
         <div className="min-h-0 flex-1">{children}</div>
       </main>
 
-      {/* Mobile bottom nav — five tabs max; the rest live on desktop */}
+      {/* Mobile bottom nav — primary tabs plus a "More" sheet holding the rest */}
       <nav className="flex shrink-0 border-t border-line bg-surface md:hidden">
-        {visible
-          .filter((tab) => !tab.mobileHidden)
-          .map((tab) => {
-            const active = pathname.startsWith(tab.href);
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                aria-current={active ? "page" : undefined}
-                className={`flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium ${
-                  active ? "text-primary-700" : "text-muted"
-                }`}
-              >
-                <NavIcon Icon={tab.Icon} active={active} size="size-5" inherit />
-                {t(tab.tkey)}
-              </Link>
-            );
-          })}
+        {mobileBarTabs.map((tab) => {
+          const active = pathname.startsWith(tab.href);
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              aria-current={active ? "page" : undefined}
+              className={`flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium ${
+                active ? "text-primary-700" : "text-muted"
+              }`}
+            >
+              <NavIcon Icon={tab.Icon} active={active} size="size-5" inherit />
+              {t(tab.tkey)}
+            </Link>
+          );
+        })}
+        {moreTabs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setMoreOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={moreOpen}
+            className={`flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium ${
+              moreTabs.some((tab) => pathname.startsWith(tab.href)) ? "text-primary-700" : "text-muted"
+            }`}
+          >
+            <Menu className="size-5 shrink-0" strokeWidth={2} />
+            {t("nav.more")}
+          </button>
+        )}
       </nav>
+
+      {/* Mobile "More" sheet */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setMoreOpen(false)}
+            className="absolute inset-0 bg-ink/40"
+          />
+          <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-line bg-surface pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-xl">
+            <div className="flex items-center justify-between px-4 pt-3">
+              <span className="text-sm font-semibold text-ink">{t("nav.more")}</span>
+              <button
+                type="button"
+                onClick={() => setMoreOpen(false)}
+                aria-label="Close"
+                className="rounded-card p-1 text-muted hover:bg-canvas hover:text-ink"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-1 p-3">
+              {moreTabs.map((tab) => {
+                const active = pathname.startsWith(tab.href);
+                return (
+                  <Link
+                    key={tab.href}
+                    href={tab.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex flex-col items-center gap-1.5 rounded-card px-2 py-3 text-xs font-medium ${
+                      active ? "bg-primary-soft text-primary-700" : "text-muted hover:bg-canvas hover:text-ink"
+                    }`}
+                  >
+                    <tab.Icon className="size-5 shrink-0" strokeWidth={active ? 2.25 : 2} />
+                    {t(tab.tkey)}
+                  </Link>
+                );
+              })}
+              <InstallAppButton variant="tile" />
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="flex flex-col items-center gap-1.5 rounded-card px-2 py-3 text-xs font-medium text-muted hover:bg-canvas hover:text-ink"
+              >
+                <LogOut className="size-5 shrink-0" strokeWidth={2} />
+                {t("nav.logout")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

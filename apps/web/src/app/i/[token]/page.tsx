@@ -152,7 +152,7 @@ export default function PublicInvoicePage() {
           {canPay && (
             <a
               href={invoice.payUrl!}
-              className="inline-flex items-center justify-center rounded-card bg-primary-700 px-5 py-2.5 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary-800"
+              className="inline-flex items-center justify-center rounded-card bg-accent-500 px-5 py-2.5 text-sm font-semibold text-white shadow-card transition-colors hover:bg-accent-600"
             >
               Pay {money(invoice.amountKes)}
             </a>

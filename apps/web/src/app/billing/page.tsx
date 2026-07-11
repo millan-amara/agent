@@ -203,11 +203,13 @@ export default function BillingPage() {
           return (
             <Card
               key={p.tier}
-              className={`relative flex flex-col p-4 ${current || popular ? "ring-1 ring-primary/40" : ""}`}
+              className={`relative flex flex-col p-4 ${
+                popular ? "ring-1 ring-accent/50" : current ? "ring-1 ring-primary/40" : ""
+              }`}
             >
               {popular && !current && (
                 <span className="absolute -top-2 right-3">
-                  <Badge tone="primary">Most popular</Badge>
+                  <Badge tone="accent">Most popular</Badge>
                 </span>
               )}
               <h3 className="font-semibold">{p.name}</h3>
@@ -219,7 +221,7 @@ export default function BillingPage() {
                 Up to {p.convLimit.toLocaleString()} conversations/month
               </p>
               <Button
-                variant={current ? "secondary" : "primary"}
+                variant={current ? "secondary" : popular ? "accent" : "primary"}
                 disabled={!checkoutEnabled || !p.available || busy !== null || current}
                 onClick={() => void subscribe(p.tier)}
                 className="mt-3 w-full"
