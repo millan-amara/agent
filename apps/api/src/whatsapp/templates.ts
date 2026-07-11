@@ -72,7 +72,16 @@ export async function submitTemplate(tenant: Tenant, template: Template): Promis
   return (data.status ?? "PENDING").toLowerCase();
 }
 
-/** Pulls current statuses from Meta and updates our records. */
+/**
+ * Pulls current statuses from Meta and updates our records.
+ *
+ * Drafts are reconciled too. Template names are unique per WABA, so if Meta reports a
+ * template by that name, that IS the truth for this tenant regardless of what our row
+ * says — you couldn't submit the name again anyway. This also makes the reset in
+ * `resetTemplatesForNewWaba` recoverable: after switching business accounts, a Sync
+ * re-approves whichever templates genuinely exist on the new one. A local draft with
+ * no counterpart on Meta simply isn't in the response, so it stays a draft.
+ */
 export async function syncTemplateStatuses(tenant: Tenant): Promise<number> {
   const c = creds(tenant);
   if (!c) return 0;
@@ -87,7 +96,7 @@ export async function syncTemplateStatuses(tenant: Tenant): Promise<number> {
   let updated = 0;
   for (const t of data.data ?? []) {
     const result = await db.template.updateMany({
-      where: { tenantId: tenant.id, name: t.name, NOT: { status: "draft" } },
+      where: { tenantId: tenant.id, name: t.name },
       data: {
         status: t.status.toLowerCase(),
         rejectionReason: t.rejected_reason ?? null,
@@ -96,6 +105,25 @@ export async function syncTemplateStatuses(tenant: Tenant): Promise<number> {
     updated += result.count;
   }
   return updated;
+}
+
+/**
+ * Called when a tenant's WABA changes (reconnect to a different business account, or
+ * disconnect). Approval lives on the WABA, not on us — so a template approved on the
+ * OLD account does not exist on the new one, and sending it would be rejected by Meta
+ * at the worst possible moment. We can't tell which is which (Template rows carry no
+ * WABA id), so everything non-draft drops back to draft: the app then offers nothing
+ * it can't actually send. A Sync against the new account re-approves whatever really
+ * is live there.
+ *
+ * Returns how many templates were reset.
+ */
+export async function resetTemplatesForNewWaba(tenantId: string): Promise<number> {
+  const { count } = await db.template.updateMany({
+    where: { tenantId, NOT: { status: "draft" } },
+    data: { status: "draft", rejectionReason: null },
+  });
+  return count;
 }
 
 /** Sends an approved template. Allowed outside the 24h window — that's its job. */

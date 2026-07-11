@@ -66,6 +66,7 @@ export default function SettingsPage() {
   const [accessToken, setAccessToken] = useState("");
   const [wabaId, setWabaId] = useState("");
   const [connectMsg, setConnectMsg] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const [followUps, setFollowUps] = useState<FollowUpSettings | null>(null);
   const [fuTemplates, setFuTemplates] = useState<MessageTemplate[]>([]);
@@ -157,8 +158,16 @@ export default function SettingsPage() {
         accessToken,
         wabaId: wabaId || undefined,
       });
-      setConnectMsg(`Connected: ${res.name} (${res.number})`);
-      setTenant({ ...tenant, waConnected: true, wabaConfigured: tenant.wabaConfigured || !!wabaId });
+      setConnectMsg(
+        `Connected: ${res.name} (${res.number})` +
+          // Tell them plainly — otherwise the templates would just start failing to send.
+          (res.templatesReset > 0
+            ? ` — different business account, so ${res.templatesReset} template(s) were reset to draft. Re-submit them, or hit Sync.`
+            : ""),
+      );
+      // Re-fetch rather than guessing: the server decides the WABA id (and may clear it).
+      const t = await api.tenant();
+      setTenant(t);
       setPhoneNumberId("");
       setAccessToken("");
       setWabaId("");
@@ -403,22 +412,43 @@ export default function SettingsPage() {
             <>
               <Section title="WhatsApp connection">
                 {tenant.waConnected ? (
-                  <p className="flex items-center gap-1.5 text-sm font-medium text-success">
-                    <CheckCircle2 className="size-4" /> Connected — customers reach your AI on WhatsApp.
-                  </p>
+                  <>
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-success">
+                      <CheckCircle2 className="size-4" /> Connected — customers reach your AI on WhatsApp.
+                    </p>
+                    {/* Say WHICH account. Previously this just said "Connected", so after
+                        switching profiles there was no way to confirm it had worked. */}
+                    <dl className="mt-2 space-y-0.5 text-xs text-muted">
+                      {tenant.waNumber && (
+                        <div className="flex gap-1.5">
+                          <dt>Number:</dt>
+                          <dd className="tnum font-medium text-ink">+{tenant.waNumber}</dd>
+                        </div>
+                      )}
+                      <div className="flex gap-1.5">
+                        <dt>Business account:</dt>
+                        <dd className="tnum font-medium text-ink">
+                          {tenant.waWabaId ?? "not set — templates unavailable"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </>
                 ) : (
                   <p className="text-sm text-muted">Not connected yet.</p>
                 )}
                 {tenant.waConnected && <HealthPill health={tenant.health} />}
                 {connectMsg && <p className="mt-1 text-sm text-success">{connectMsg}</p>}
+
                 <div className="mt-4">
                   <EmbeddedSignup
                     onConnected={(label) => {
                       setConnectMsg(`Connected: ${label}`);
-                      setTenant({ ...tenant, waConnected: true, wabaConfigured: true });
+                      // The account changed, so approvals from the old one are gone.
+                      void api.tenant().then(setTenant).catch(() => {});
                     }}
                   />
                 </div>
+
                 <form onSubmit={connect} className="mt-4 space-y-3">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Input
@@ -439,9 +469,56 @@ export default function SettingsPage() {
                       placeholder="WhatsApp Business Account ID (for templates)"
                     />
                   </div>
-                  <Button type="submit" variant="secondary" disabled={saving || !phoneNumberId || !accessToken}>
-                    {tenant.waConnected ? "Update connection" : "Connect"}
-                  </Button>
+                  {/* The blank-WABA case used to silently keep the old business account. */}
+                  {tenant.waConnected && phoneNumberId && phoneNumberId !== "" && !wabaId && (
+                    <p className="text-xs text-attention">
+                      Switching to a different number? Fill in the Business Account ID too —
+                      leave it blank and templates will be turned off rather than pointed at your
+                      old account.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="submit"
+                      variant="secondary"
+                      disabled={saving || !phoneNumberId || !accessToken}
+                    >
+                      {tenant.waConnected ? "Update connection" : "Connect"}
+                    </Button>
+                    {tenant.waConnected && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={disconnecting}
+                        onClick={async () => {
+                          if (
+                            !confirm(
+                              "Disconnect WhatsApp? Your AI stops answering on this number, and template approvals are cleared (they belong to this business account).",
+                            )
+                          ) {
+                            return;
+                          }
+                          setConnectMsg(null);
+                          setError(null);
+                          setDisconnecting(true);
+                          try {
+                            const res = await api.disconnectWhatsApp();
+                            const t = await api.tenant();
+                            setTenant(t);
+                            setConnectMsg(
+                              `Disconnected.${res.templatesReset > 0 ? ` ${res.templatesReset} template(s) reset to draft.` : ""}`,
+                            );
+                          } catch (err) {
+                            setError((err as Error).message);
+                          } finally {
+                            setDisconnecting(false);
+                          }
+                        }}
+                      >
+                        {disconnecting ? "Disconnecting…" : "Disconnect"}
+                      </Button>
+                    )}
+                  </div>
                 </form>
               </Section>
 

@@ -260,6 +260,9 @@ export interface TenantInfo {
   onboarded: boolean;
   waConnected: boolean;
   wabaConfigured: boolean;
+  /** Which account is connected — so a profile switch can actually be confirmed. */
+  waNumber: string | null;
+  waWabaId: string | null;
   stages: string[];
   profile: BusinessProfile;
   followUps: FollowUpSettings;
@@ -433,13 +436,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ seed }),
     }),
+  /** Clears the connection entirely. Also drops template approvals (they're per-WABA). */
+  disconnectWhatsApp: () =>
+    request<{ ok: true; templatesReset: number }>("/api/tenant/whatsapp", { method: "DELETE" }),
   connectWhatsApp: (body: { phoneNumberId: string; accessToken: string; wabaId?: string }) =>
-    request<{ ok: true; number: string; name: string }>("/api/tenant/whatsapp", {
+    request<{ ok: true; number: string; name: string; templatesReset: number }>("/api/tenant/whatsapp", {
       method: "POST",
       body: JSON.stringify(body),
     }),
   connectWhatsAppEmbedded: (body: { code: string; phoneNumberId: string; wabaId: string }) =>
-    request<{ ok: true; number: string; name: string }>("/api/tenant/whatsapp/embedded", {
+    request<{ ok: true; number: string; name: string; templatesReset: number }>("/api/tenant/whatsapp/embedded", {
       method: "POST",
       body: JSON.stringify(body),
     }),

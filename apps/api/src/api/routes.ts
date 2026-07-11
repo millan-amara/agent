@@ -14,6 +14,7 @@ import {
   syncTemplateStatuses,
   sendTemplateMessage,
   renderTemplate,
+  resetTemplatesForNewWaba,
   TemplateSubmitError,
   variableCount,
 } from "../whatsapp/templates.js";
@@ -150,6 +151,10 @@ export function registerApiRoutes(
       onboarded: auth.tenant.onboarded,
       waConnected: Boolean(auth.tenant.waPhoneNumberId),
       wabaConfigured: Boolean(auth.tenant.waWabaId),
+      // Which account is actually connected. The UI only ever said "Connected", so
+      // after switching profiles there was no way to confirm it had worked.
+      waNumber: auth.tenant.waDisplayPhone,
+      waWabaId: auth.tenant.waWabaId,
       stages: JSON.parse(auth.tenant.stages) as string[],
       profile: JSON.parse(auth.tenant.businessProfile) as BusinessProfile,
       followUps: parseFollowUpConfig(auth.tenant),
@@ -785,21 +790,51 @@ export function registerApiRoutes(
     }
     const info = (await res.json()) as { display_phone_number: string; verified_name: string };
 
+    const newPhone = phoneNumberId.trim();
+    const givenWaba = wabaId?.trim() || null;
+    const samePhone = auth.tenant.waPhoneNumberId === newPhone;
+
+    /**
+     * The old code did `...(wabaId ? { waWabaId } : {})` — so switching to a DIFFERENT
+     * number while leaving the WABA field blank silently kept the previous business
+     * account, pairing the new number with the old WABA. Templates would then be
+     * submitted to, and synced from, an account the tenant no longer uses.
+     *
+     * Keep the stored WABA only when this is the same number (i.e. a token refresh).
+     * Otherwise it's a genuine switch: take the WABA given, or clear it — never inherit.
+     */
+    const nextWaba = givenWaba ?? (samePhone ? auth.tenant.waWabaId : null);
+    const wabaChanged = nextWaba !== auth.tenant.waWabaId;
+
     // A phone number routes to exactly one tenant.
     await db.tenant.updateMany({
-      where: { waPhoneNumberId: phoneNumberId.trim(), NOT: { id: auth.tenant.id } },
+      where: { waPhoneNumberId: newPhone, NOT: { id: auth.tenant.id } },
       data: { waPhoneNumberId: null },
     });
     await db.tenant.update({
       where: { id: auth.tenant.id },
       data: {
-        waPhoneNumberId: phoneNumberId.trim(),
+        waPhoneNumberId: newPhone,
         waAccessToken: encryptSecret(accessToken.trim()),
+        waWabaId: nextWaba,
         waDisplayPhone: (info.display_phone_number ?? "").replace(/\D/g, "") || null,
-        ...(wabaId?.trim() ? { waWabaId: wabaId.trim() } : {}),
       },
     });
-    return { ok: true, number: info.display_phone_number, name: info.verified_name };
+
+    // Approvals belong to the old WABA and are worthless on the new one.
+    const templatesReset = wabaChanged ? await resetTemplatesForNewWaba(auth.tenant.id) : 0;
+    await audit(
+      auth.tenant.id,
+      auth.user.id,
+      "whatsapp.connect",
+      `manual:${info.display_phone_number}${wabaChanged ? ` (waba changed, ${templatesReset} templates reset)` : ""}`,
+    );
+    return {
+      ok: true,
+      number: info.display_phone_number,
+      name: info.verified_name,
+      templatesReset,
+    };
   });
 
   // One-click Embedded Signup: the browser returns a code + phone/waba ids;
@@ -819,6 +854,7 @@ export function registerApiRoutes(
       const token = await exchangeCodeForToken(code);
       await subscribeAppToWaba(wabaId.trim(), token);
       const info = await fetchNumberInfo(phoneNumberId.trim(), token);
+      const wabaChanged = wabaId.trim() !== auth.tenant.waWabaId;
       await db.tenant.updateMany({
         where: { waPhoneNumberId: phoneNumberId.trim(), NOT: { id: auth.tenant.id } },
         data: { waPhoneNumberId: null },
@@ -832,14 +868,50 @@ export function registerApiRoutes(
           waDisplayPhone: (info.number ?? "").replace(/\D/g, "") || null,
         },
       });
-      await audit(auth.tenant.id, auth.user.id, "whatsapp.connect", `embedded:${info.number}`);
-      return { ok: true, number: info.number, name: info.name };
+      // Approvals belong to the old WABA and are worthless on the new one.
+      const templatesReset = wabaChanged ? await resetTemplatesForNewWaba(auth.tenant.id) : 0;
+      await audit(
+        auth.tenant.id,
+        auth.user.id,
+        "whatsapp.connect",
+        `embedded:${info.number}${wabaChanged ? ` (waba changed, ${templatesReset} templates reset)` : ""}`,
+      );
+      return { ok: true, number: info.number, name: info.name, templatesReset };
     } catch (err) {
       if (err instanceof EmbeddedSignupError) {
         return reply.code(400).send({ error: err.message });
       }
       throw err;
     }
+  });
+
+  /**
+   * Disconnect WhatsApp entirely. There was previously no way to do this — you could
+   * only overwrite the connection — so a tenant could never stop their AI answering on
+   * a number they'd handed back. Clears the credentials and the cached health, and
+   * drops template approvals (they belong to the WABA we're letting go of).
+   */
+  app.delete("/api/tenant/whatsapp", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+    if (!auth.tenant.waPhoneNumberId) {
+      return reply.code(400).send({ error: "WhatsApp isn't connected." });
+    }
+    const previous = auth.tenant.waDisplayPhone ?? auth.tenant.waPhoneNumberId;
+    await db.tenant.update({
+      where: { id: auth.tenant.id },
+      data: {
+        waPhoneNumberId: null,
+        waAccessToken: null,
+        waWabaId: null,
+        waDisplayPhone: null,
+        waQualityRating: null,
+        waMessagingLimit: null,
+      },
+    });
+    const templatesReset = await resetTemplatesForNewWaba(auth.tenant.id);
+    await audit(auth.tenant.id, auth.user.id, "whatsapp.disconnect", previous);
+    return { ok: true, templatesReset };
   });
 
   // ---- Knowledge base (RAG) ----
