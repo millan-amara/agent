@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
-import type { Contact, Message, Invoice, InvoiceItem, Tenant } from "@prisma/client";
+import type { Contact, Message, Invoice, InvoiceItem, Prisma, Tenant } from "@prisma/client";
 import { db } from "../db.js";
 import { publish, subscribe } from "../events.js";
 import { requireAuth, requireOwner } from "../auth/auth.js";
@@ -187,11 +187,18 @@ export function registerApiRoutes(
     };
   });
 
-  // Business branding: the app sidebar, the hosted invoice page, and the public page.
+  /**
+   * Business branding: the app sidebar, the hosted invoice page, and the public page.
+   *
+   * PARTIAL update — a key absent from the body is left alone. Branding is edited from
+   * two tabs now (Business owns name/logo/contact; Payments owns the offline pay
+   * instructions), and a full replace would mean saving one form silently blanked the
+   * other's fields. An explicit null or "" still clears a field.
+   */
   app.put("/api/tenant/branding", async (req, reply) => {
     const auth = await requireOwner(req, reply);
     if (!auth) return;
-    const body = req.body as {
+    const body = (req.body ?? {}) as {
       name?: string;
       logoUrl?: string | null;
       businessPhone?: string | null;
@@ -202,21 +209,28 @@ export function registerApiRoutes(
       const s = (v ?? "").trim();
       return s ? s.slice(0, max) : null;
     };
+
+    const data: Prisma.TenantUpdateInput = {};
     // The business name is the headline brand, so it can be corrected here — but it
     // can never be blanked, since the whole shell (and every invoice) renders it.
-    const name = clean(body.name, 120);
-    await db.tenant.update({
-      where: { id: auth.tenant.id },
-      data: {
-        ...(name ? { name } : {}),
-        // Large cap: logoUrl may be a base64 data: URL from the upload endpoint,
-        // not just a pasted http(s) URL.
-        logoUrl: clean(body.logoUrl, 1_500_000),
-        businessPhone: clean(body.businessPhone, 40),
-        businessEmail: clean(body.businessEmail, 120),
-        payInstructions: clean(body.payInstructions, 500),
-      },
-    });
+    if (body.name !== undefined) {
+      const name = clean(body.name, 120);
+      if (!name) return reply.code(400).send({ error: "Your business name can't be empty." });
+      data.name = name;
+    }
+    if (body.logoUrl !== undefined) {
+      // Large cap: logoUrl may be a base64 data: URL from the upload endpoint,
+      // not just a pasted http(s) URL.
+      data.logoUrl = clean(body.logoUrl, 1_500_000);
+    }
+    if (body.businessPhone !== undefined) data.businessPhone = clean(body.businessPhone, 40);
+    if (body.businessEmail !== undefined) data.businessEmail = clean(body.businessEmail, 120);
+    if (body.payInstructions !== undefined) data.payInstructions = clean(body.payInstructions, 500);
+
+    if (Object.keys(data).length === 0) {
+      return reply.code(400).send({ error: "Nothing to update." });
+    }
+    await db.tenant.update({ where: { id: auth.tenant.id }, data });
     return { ok: true };
   });
 

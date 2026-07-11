@@ -7,7 +7,6 @@ import {
   type BusinessProfile,
   type DigestSettings,
   type FollowUpSettings,
-  type InvoiceBranding,
   type MessageTemplate,
   type OwnerChatSettings,
   type PublicPageSettings,
@@ -16,6 +15,7 @@ import {
 import {
   Bot,
   BookOpen,
+  Building2,
   Columns3,
   MessageCircle,
   Zap,
@@ -39,6 +39,9 @@ import { Field, Input, PasswordInput, Textarea, Select } from "@/components/ui/F
 import { notifyBrandChanged } from "@/lib/brand";
 
 const SETTINGS_TABS = [
+  // Business first: it's your identity (name, logo) and it's what people hunt for.
+  // It used to be buried inside the Payments tab as "Invoice branding".
+  { id: "business", label: "Business", Icon: Building2 },
   { id: "ai", label: "Your AI", Icon: Bot },
   { id: "knowledge", label: "Knowledge", Icon: BookOpen },
   { id: "pipeline", label: "Pipeline", Icon: Columns3 },
@@ -53,7 +56,7 @@ type TabId = (typeof SETTINGS_TABS)[number]["id"];
 const CHECKBOX = "mt-0.5 size-4 shrink-0 accent-primary-700";
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<TabId>("ai");
+  const [tab, setTab] = useState<TabId>("business");
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -91,6 +94,7 @@ export default function SettingsPage() {
     payInstructions: "",
   });
   const [brandingMsg, setBrandingMsg] = useState<string | null>(null);
+  const [payInstrMsg, setPayInstrMsg] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [cap, setCap] = useState<string>("");
@@ -201,6 +205,146 @@ export default function SettingsPage() {
 
         <div className="min-w-0 flex-1 space-y-4">
           {error && <p className="rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+
+          {tab === "business" && (
+            <Section
+              title="Your business"
+              description="Your name and logo brand this app's sidebar, every invoice your customers open, and your public page."
+            >
+              {brandingMsg && <Notice className="mb-3">{brandingMsg}</Notice>}
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setBrandingMsg(null);
+                  setError(null);
+                  const name = branding.name.trim();
+                  if (!name) {
+                    setError("Your business name can't be empty — it brands the app and your invoices.");
+                    return;
+                  }
+                  // Partial save: payInstructions is owned by the Payments tab and is
+                  // deliberately not sent, so saving here can't blank it.
+                  const next = {
+                    logoUrl: branding.logoUrl.trim() || null,
+                    businessPhone: branding.businessPhone.trim() || null,
+                    businessEmail: branding.businessEmail.trim() || null,
+                  };
+                  try {
+                    await api.saveBranding({ ...next, name });
+                    setBrandingMsg("Saved.");
+                    setTenant((t) =>
+                      t ? { ...t, name, branding: { ...t.branding!, ...next } } : t,
+                    );
+                    // Repaint the sidebar without waiting for a route change.
+                    notifyBrandChanged();
+                  } catch (err) {
+                    setError((err as Error).message);
+                  }
+                }}
+                className="space-y-4"
+              >
+                <Field label="Business name" hint="Shown in the sidebar, on invoices, and on your public page.">
+                  <Input
+                    required
+                    maxLength={120}
+                    value={branding.name}
+                    onChange={(e) => setBranding((b) => ({ ...b, name: e.target.value }))}
+                    placeholder="Westlands Physio"
+                  />
+                </Field>
+
+                <div className="text-sm">
+                  <span className="mb-1.5 block font-medium">Logo</span>
+                  <div className="flex items-center gap-3">
+                    {branding.logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={branding.logoUrl}
+                        alt="Logo"
+                        className="size-12 rounded-card border border-line object-contain"
+                      />
+                    ) : (
+                      <div className="grid size-12 place-items-center rounded-card border border-dashed border-line text-xs text-muted">
+                        none
+                      </div>
+                    )}
+                    <div className="flex flex-col items-start gap-1">
+                      <label className="inline-flex cursor-pointer items-center rounded-card border border-line bg-surface px-3 py-1.5 text-xs font-medium hover:bg-canvas">
+                        {uploadingLogo ? "Uploading…" : "Upload image"}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0];
+                            e.target.value = "";
+                            if (!f) return;
+                            setError(null);
+                            setUploadingLogo(true);
+                            try {
+                              const { logoUrl } = await api.uploadLogo(f);
+                              setBranding((b) => ({ ...b, logoUrl }));
+                              // The upload endpoint already persists the logo, so
+                              // the sidebar can adopt it now rather than on Save.
+                              notifyBrandChanged();
+                            } catch (err) {
+                              setError((err as Error).message);
+                            } finally {
+                              setUploadingLogo(false);
+                            }
+                          }}
+                        />
+                      </label>
+                      {branding.logoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setBranding({ ...branding, logoUrl: "" })}
+                          className="text-xs text-muted hover:text-danger"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <Input
+                    className="mt-2"
+                    value={branding.logoUrl.startsWith("data:") ? "" : branding.logoUrl}
+                    onChange={(e) => setBranding({ ...branding, logoUrl: e.target.value })}
+                    placeholder="…or paste an image URL"
+                  />
+                  <p className="mt-1 text-xs text-muted">
+                    PNG, JPG, WEBP or GIF, under 512KB. Uploads save immediately.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <label className="block min-w-[12rem] flex-1 text-sm">
+                    <span className="mb-1 block font-medium">Business phone</span>
+                    <Input
+                      value={branding.businessPhone}
+                      onChange={(e) => setBranding({ ...branding, businessPhone: e.target.value })}
+                      placeholder="+254…"
+                    />
+                  </label>
+                  <label className="block min-w-[12rem] flex-1 text-sm">
+                    <span className="mb-1 block font-medium">Business email</span>
+                    <Input
+                      value={branding.businessEmail}
+                      onChange={(e) => setBranding({ ...branding, businessEmail: e.target.value })}
+                      placeholder="hello@business.co.ke"
+                    />
+                  </label>
+                </div>
+                <p className="-mt-1 text-xs text-muted">
+                  These appear on the contact line of your invoices.
+                </p>
+
+                <Button type="submit" variant="secondary">
+                  Save changes
+                </Button>
+              </form>
+            </Section>
+          )}
 
           {tab === "ai" && (
             <Section title="Tell Azayon how to reply">
@@ -842,140 +986,39 @@ export default function SettingsPage() {
               </Section>
 
               <Section
-                title="Business branding"
-                description="Your logo and business name brand this app's sidebar, the invoices your customers open, and your public page. Payment instructions show on invoices issued without an online pay link."
+                title="Offline payment instructions"
+                description="Shown on invoices issued without an online pay link — for customers paying by till, bank transfer, or cash."
               >
-                {brandingMsg && <Notice className="mb-3">{brandingMsg}</Notice>}
+                {payInstrMsg && <Notice className="mb-3">{payInstrMsg}</Notice>}
                 <form
                   onSubmit={async (e) => {
                     e.preventDefault();
-                    setBrandingMsg(null);
+                    setPayInstrMsg(null);
                     setError(null);
-                    const name = branding.name.trim();
-                    if (!name) {
-                      setError("Your business name can't be empty — it brands the app and your invoices.");
-                      return;
-                    }
-                    const next: InvoiceBranding = {
-                      logoUrl: branding.logoUrl.trim() || null,
-                      businessPhone: branding.businessPhone.trim() || null,
-                      businessEmail: branding.businessEmail.trim() || null,
-                      payInstructions: branding.payInstructions.trim() || null,
-                    };
+                    const payInstructions = branding.payInstructions.trim() || null;
                     try {
-                      await api.saveBranding({ ...next, name });
-                      setBrandingMsg("Saved.");
-                      setTenant({ ...tenant, name, branding: next });
-                      // Repaint the sidebar without waiting for a route change.
-                      notifyBrandChanged();
+                      // Partial save — sending only this key leaves name/logo/contact alone.
+                      await api.saveBranding({ payInstructions });
+                      setPayInstrMsg("Saved.");
+                      setTenant((t) =>
+                        t ? { ...t, branding: { ...t.branding!, payInstructions } } : t,
+                      );
                     } catch (err) {
                       setError((err as Error).message);
                     }
                   }}
-                  className="space-y-4"
+                  className="space-y-3"
                 >
-                  <Field label="Business name" hint="Shown in the sidebar, on invoices, and on your public page.">
-                    <Input
-                      required
-                      maxLength={120}
-                      value={branding.name}
-                      onChange={(e) => setBranding((b) => ({ ...b, name: e.target.value }))}
-                      placeholder="Westlands Physio"
-                    />
-                  </Field>
-
-                  <div className="text-sm">
-                    <span className="mb-1.5 block font-medium">Logo</span>
-                    <div className="flex items-center gap-3">
-                      {branding.logoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={branding.logoUrl}
-                          alt="Logo"
-                          className="size-12 rounded-card border border-line object-contain"
-                        />
-                      ) : (
-                        <div className="grid size-12 place-items-center rounded-card border border-dashed border-line text-xs text-muted">
-                          none
-                        </div>
-                      )}
-                      <div className="flex flex-col items-start gap-1">
-                        <label className="inline-flex cursor-pointer items-center rounded-card border border-line bg-surface px-3 py-1.5 text-xs font-medium hover:bg-canvas">
-                          {uploadingLogo ? "Uploading…" : "Upload image"}
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg,image/webp,image/gif"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const f = e.target.files?.[0];
-                              e.target.value = "";
-                              if (!f) return;
-                              setError(null);
-                              setUploadingLogo(true);
-                              try {
-                                const { logoUrl } = await api.uploadLogo(f);
-                                setBranding((b) => ({ ...b, logoUrl }));
-                                // The upload endpoint already persists the logo, so
-                                // the sidebar can adopt it now rather than on Save.
-                                notifyBrandChanged();
-                              } catch (err) {
-                                setError((err as Error).message);
-                              } finally {
-                                setUploadingLogo(false);
-                              }
-                            }}
-                          />
-                        </label>
-                        {branding.logoUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setBranding({ ...branding, logoUrl: "" })}
-                            className="text-xs text-muted hover:text-danger"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <Input
-                      className="mt-2"
-                      value={branding.logoUrl.startsWith("data:") ? "" : branding.logoUrl}
-                      onChange={(e) => setBranding({ ...branding, logoUrl: e.target.value })}
-                      placeholder="…or paste an image URL"
-                    />
-                    <p className="mt-1 text-xs text-muted">
-                      PNG, JPG, WEBP or GIF, under 512KB. Uploads save immediately.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <label className="block min-w-[12rem] flex-1 text-sm">
-                      <span className="mb-1 block font-medium">Business phone</span>
-                      <Input
-                        value={branding.businessPhone}
-                        onChange={(e) => setBranding({ ...branding, businessPhone: e.target.value })}
-                        placeholder="+254…"
-                      />
-                    </label>
-                    <label className="block min-w-[12rem] flex-1 text-sm">
-                      <span className="mb-1 block font-medium">Business email</span>
-                      <Input
-                        value={branding.businessEmail}
-                        onChange={(e) => setBranding({ ...branding, businessEmail: e.target.value })}
-                        placeholder="hello@business.co.ke"
-                      />
-                    </label>
-                  </div>
-                  <label className="block text-sm">
-                    <span className="mb-1 block font-medium">Payment instructions (offline)</span>
-                    <Textarea
-                      value={branding.payInstructions}
-                      onChange={(e) => setBranding({ ...branding, payInstructions: e.target.value })}
-                      rows={2}
-                      placeholder="e.g. M-Pesa Till 123456, or pay on delivery."
-                    />
-                  </label>
+                  <Textarea
+                    value={branding.payInstructions}
+                    onChange={(e) => setBranding({ ...branding, payInstructions: e.target.value })}
+                    rows={2}
+                    maxLength={500}
+                    aria-label="Offline payment instructions"
+                    placeholder="e.g. M-Pesa Till 123456, or pay on delivery."
+                  />
                   <Button type="submit" variant="secondary">
-                    Save branding
+                    Save instructions
                   </Button>
                 </form>
               </Section>

@@ -476,7 +476,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  saveBranding: (body: InvoiceBranding & { name?: string }) =>
+  /**
+   * Partial: only the keys you send are touched. Branding is split across two tabs
+   * (Business owns name/logo/contact, Payments owns pay instructions), so sending a
+   * whole object from one of them would blank the other's fields.
+   */
+  saveBranding: (body: Partial<InvoiceBranding> & { name?: string }) =>
     request<{ ok: true }>("/api/tenant/branding", {
       method: "PUT",
       body: JSON.stringify(body),
