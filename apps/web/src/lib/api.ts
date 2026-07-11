@@ -135,7 +135,9 @@ export interface BookingSettings {
 
 export interface BusinessProfile {
   description: string;
-  services?: Array<{ name: string; price?: string }>;
+  /** `amountKes` is derived server-side from `price`; it's absent when the price
+   *  isn't a single unambiguous number, which is what stops the AI invoicing it. */
+  services?: Array<{ name: string; price?: string; amountKes?: number }>;
   faqs?: Array<{ q: string; a: string }>;
   tone?: string;
   languages?: string;
@@ -280,7 +282,18 @@ export interface Me {
   emailVerified: boolean;
   role: Role;
   locale: "en" | "sw";
-  tenant: Omit<TenantInfo, "profile">;
+  /** The subset /api/auth/me actually returns — not the full TenantInfo. */
+  tenant: {
+    id: string;
+    name: string;
+    vertical: string;
+    onboarded: boolean;
+    waConnected: boolean;
+    stages: string[];
+    billing: BillingStatus;
+    /** Base64 data: URL, or null. Brands the app shell. */
+    logoUrl: string | null;
+  };
 }
 
 export interface VerticalTemplate {
@@ -463,7 +476,7 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  saveBranding: (body: InvoiceBranding) =>
+  saveBranding: (body: InvoiceBranding & { name?: string }) =>
     request<{ ok: true }>("/api/tenant/branding", {
       method: "PUT",
       body: JSON.stringify(body),
@@ -602,6 +615,27 @@ export const api = {
     request<ApiContact>(`/api/contacts/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ stage }),
+    }),
+  /** Send an approved template — the only way to reach a contact past the 24h window. */
+  sendTemplate: (contactId: string, templateId: string) =>
+    request<{ message: ApiMessage; contact: ApiContact }>(`/api/contacts/${contactId}/template`, {
+      method: "POST",
+      body: JSON.stringify({ templateId }),
+    }),
+  /** Full replace of the lead's details map (a merge couldn't express a deletion). */
+  setLeadFields: (id: string, fields: Record<string, string>) =>
+    request<ApiContact>(`/api/contacts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ fields }),
+    }),
+  /**
+   * Save the pipeline. `renames` tells the server which rows were renamed so it can
+   * carry leads across — by name alone it can't tell a rename from a delete+add.
+   */
+  saveStages: (stages: string[], renames: Array<{ from: string; to: string }> = []) =>
+    request<{ ok: true; stages: string[] }>("/api/tenant/stages", {
+      method: "PUT",
+      body: JSON.stringify({ stages, renames }),
     }),
   approveInvoice: (contactId: string, invoiceId: string) =>
     request<{ ok: true; delivered: boolean; payUrl?: string }>(

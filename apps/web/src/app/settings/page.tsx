@@ -16,6 +16,7 @@ import {
 import {
   Bot,
   BookOpen,
+  Columns3,
   MessageCircle,
   Zap,
   CreditCard,
@@ -25,6 +26,7 @@ import {
   Copy,
   ExternalLink,
 } from "lucide-react";
+import { StageEditor } from "@/components/StageEditor";
 import { ProfileForm } from "@/components/ProfileForm";
 import { TemplateManager } from "@/components/TemplateManager";
 import { KnowledgeBase } from "@/components/KnowledgeBase";
@@ -33,11 +35,13 @@ import { EmbeddedSignup } from "@/components/EmbeddedSignup";
 import { Card } from "@/components/ui/Card";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Button, buttonStyles } from "@/components/ui/Button";
-import { Input, PasswordInput, Textarea, Select } from "@/components/ui/Field";
+import { Field, Input, PasswordInput, Textarea, Select } from "@/components/ui/Field";
+import { notifyBrandChanged } from "@/lib/brand";
 
 const SETTINGS_TABS = [
   { id: "ai", label: "Your AI", Icon: Bot },
   { id: "knowledge", label: "Knowledge", Icon: BookOpen },
+  { id: "pipeline", label: "Pipeline", Icon: Columns3 },
   { id: "whatsapp", label: "WhatsApp", Icon: MessageCircle },
   { id: "automation", label: "Automation", Icon: Zap },
   { id: "payments", label: "Payments", Icon: CreditCard },
@@ -80,6 +84,7 @@ export default function SettingsPage() {
   const [paystackKey, setPaystackKey] = useState("");
   const [paystackMsg, setPaystackMsg] = useState<string | null>(null);
   const [branding, setBranding] = useState({
+    name: "",
     logoUrl: "",
     businessPhone: "",
     businessEmail: "",
@@ -91,6 +96,9 @@ export default function SettingsPage() {
   const [cap, setCap] = useState<string>("");
   const [retention, setRetention] = useState<string>("");
   const [complianceMsg, setComplianceMsg] = useState<string | null>(null);
+
+  // The "Your AI" tab unmounts on tab switch, which would silently bin unsaved edits.
+  const [aiDirty, setAiDirty] = useState(false);
 
   useEffect(() => {
     api
@@ -105,6 +113,7 @@ export default function SettingsPage() {
         setCap(t.compliance.dailyMessageCap?.toString() ?? "");
         setRetention(t.compliance.dataRetentionDays?.toString() ?? "");
         setBranding({
+          name: t.name,
           logoUrl: t.branding?.logoUrl ?? "",
           businessPhone: t.branding?.businessPhone ?? "",
           businessEmail: t.branding?.businessEmail ?? "",
@@ -125,8 +134,10 @@ export default function SettingsPage() {
       await api.saveProfile({ profile });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+      return true;
     } catch (err) {
       setError((err as Error).message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -164,7 +175,17 @@ export default function SettingsPage() {
             return (
               <button
                 key={s.id}
-                onClick={() => setTab(s.id)}
+                onClick={() => {
+                  if (
+                    tab === "ai" &&
+                    s.id !== "ai" &&
+                    aiDirty &&
+                    !confirm("You have unsaved changes to your AI. Leave without saving?")
+                  ) {
+                    return;
+                  }
+                  setTab(s.id);
+                }}
                 className={`flex shrink-0 items-center gap-2.5 rounded-card px-3 py-2 text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-primary-soft text-primary-700"
@@ -188,7 +209,10 @@ export default function SettingsPage() {
                 initial={tenant.profile}
                 saving={saving}
                 submitLabel="Save changes"
-                onSubmit={(p) => void save(p)}
+                onSubmit={save}
+                paymentsEnabled={tenant.paystackConfigured}
+                bookingAutomated={tenant.booking.enabled}
+                onDirtyChange={setAiDirty}
               />
             </Section>
           )}
@@ -196,6 +220,32 @@ export default function SettingsPage() {
           {tab === "knowledge" && (
             <Section title="Knowledge base">
               <KnowledgeBase />
+            </Section>
+          )}
+
+          {tab === "pipeline" && (
+            <Section
+              title="Pipeline stages"
+              description="The steps a lead moves through. These are the exact names your AI sees and uses when it moves a lead, so name them the way you talk about your business."
+            >
+              {tenant.role === "owner" ? (
+                <StageEditor
+                  stages={tenant.stages}
+                  onSaved={(stages) => setTenant((t) => (t ? { ...t, stages } : t))}
+                />
+              ) : (
+                <>
+                  <ol className="mb-3 space-y-2">
+                    {tenant.stages.map((s, i) => (
+                      <li key={s} className="flex items-center gap-2 text-sm">
+                        <span className="w-5 text-right text-xs tabular-nums text-muted">{i + 1}</span>
+                        <span className="rounded-card bg-canvas px-3 py-1.5">{s}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="text-sm text-muted">Only the owner can change the pipeline.</p>
+                </>
+              )}
             </Section>
           )}
 
@@ -792,8 +842,8 @@ export default function SettingsPage() {
               </Section>
 
               <Section
-                title="Invoice branding"
-                description="Shown on the invoices your customers open. The logo and contact line appear at the top; payment instructions show on invoices issued without an online pay link."
+                title="Business branding"
+                description="Your logo and business name brand this app's sidebar, the invoices your customers open, and your public page. Payment instructions show on invoices issued without an online pay link."
               >
                 {brandingMsg && <Notice className="mb-3">{brandingMsg}</Notice>}
                 <form
@@ -801,6 +851,11 @@ export default function SettingsPage() {
                     e.preventDefault();
                     setBrandingMsg(null);
                     setError(null);
+                    const name = branding.name.trim();
+                    if (!name) {
+                      setError("Your business name can't be empty — it brands the app and your invoices.");
+                      return;
+                    }
                     const next: InvoiceBranding = {
                       logoUrl: branding.logoUrl.trim() || null,
                       businessPhone: branding.businessPhone.trim() || null,
@@ -808,15 +863,27 @@ export default function SettingsPage() {
                       payInstructions: branding.payInstructions.trim() || null,
                     };
                     try {
-                      await api.saveBranding(next);
+                      await api.saveBranding({ ...next, name });
                       setBrandingMsg("Saved.");
-                      setTenant({ ...tenant, branding: next });
+                      setTenant({ ...tenant, name, branding: next });
+                      // Repaint the sidebar without waiting for a route change.
+                      notifyBrandChanged();
                     } catch (err) {
                       setError((err as Error).message);
                     }
                   }}
                   className="space-y-4"
                 >
+                  <Field label="Business name" hint="Shown in the sidebar, on invoices, and on your public page.">
+                    <Input
+                      required
+                      maxLength={120}
+                      value={branding.name}
+                      onChange={(e) => setBranding((b) => ({ ...b, name: e.target.value }))}
+                      placeholder="Westlands Physio"
+                    />
+                  </Field>
+
                   <div className="text-sm">
                     <span className="mb-1.5 block font-medium">Logo</span>
                     <div className="flex items-center gap-3">
@@ -848,6 +915,9 @@ export default function SettingsPage() {
                               try {
                                 const { logoUrl } = await api.uploadLogo(f);
                                 setBranding((b) => ({ ...b, logoUrl }));
+                                // The upload endpoint already persists the logo, so
+                                // the sidebar can adopt it now rather than on Save.
+                                notifyBrandChanged();
                               } catch (err) {
                                 setError((err as Error).message);
                               } finally {

@@ -76,7 +76,7 @@ export const OWNER_TOOLS: Anthropic.Tool[] = [
   {
     name: "pipeline_breakdown",
     description:
-      "Count of open leads in each pipeline stage and the total potential value. Use for 'how's my pipeline', 'how many leads in each stage'.",
+      "Count of open leads in each pipeline stage, plus how much is unpaid (from invoices raised but not yet settled). Use for 'how's my pipeline', 'how many leads in each stage'.",
     input_schema: { type: "object", properties: {} },
   },
   {
@@ -163,7 +163,10 @@ export async function executeOwnerTool(
         `${contact.name ?? contact.phone} (${contact.phone})`,
         `- Stage: ${contact.stage}`,
       ];
-      if (contact.valueCents > 0) lines.push(`- Potential value: ${kes(contact.valueCents)}`);
+      // Derived from the open invoices already loaded above — no stored figure to
+      // drift, and it's listed line-by-line under "Open invoices" just below.
+      const openCents = invoices.reduce((sum, i) => sum + i.amountCents, 0);
+      if (openCents > 0) lines.push(`- Open value: ${kes(openCents)}`);
       if (lastMsg)
         lines.push(
           `- Last message (${lastMsg.direction === "in" ? "them" : "us"}): "${lastMsg.text.slice(0, 120)}"`,
@@ -227,22 +230,42 @@ export async function executeOwnerTool(
 
     case "pipeline_breakdown": {
       const stages = JSON.parse(tenant.stages) as string[];
-      const contacts = await db.contact.findMany({
-        where: { ...base, optedOut: false },
-        select: { stage: true, valueCents: true },
-      });
+      // Open value is DERIVED from unpaid invoices, never stored. A stored figure
+      // has to be maintained by someone, and nobody was — so it read KES 0 forever.
+      // This can only ever report money a customer has actually been billed for.
+      const [contacts, openInvoices] = await Promise.all([
+        db.contact.findMany({
+          where: { ...base, optedOut: false },
+          select: { id: true, stage: true },
+        }),
+        db.invoice.groupBy({
+          by: ["contactId"],
+          where: { tenantId, status: { in: ["pending", "pending_approval"] } },
+          _sum: { amountCents: true },
+        }),
+      ]);
+      const unpaidByContact = new Map(
+        openInvoices.map((r) => [r.contactId, r._sum.amountCents ?? 0]),
+      );
+
       const byStage = new Map<string, { count: number; value: number }>();
       for (const s of stages) byStage.set(s, { count: 0, value: 0 });
       let totalValue = 0;
       for (const c of contacts) {
         const cur = byStage.get(c.stage) ?? { count: 0, value: 0 };
+        const unpaid = unpaidByContact.get(c.id) ?? 0;
         cur.count++;
-        cur.value += c.valueCents;
+        cur.value += unpaid;
         byStage.set(c.stage, cur);
-        totalValue += c.valueCents;
+        totalValue += unpaid;
       }
-      const rows = [...byStage.entries()].map(([s, v]) => `- ${s}: ${v.count}${v.value ? ` (${kes(v.value)})` : ""}`);
-      return `Pipeline (${contacts.length} open leads, ${kes(totalValue)} potential):\n${rows.join("\n")}`;
+      const rows = [...byStage.entries()].map(
+        ([s, v]) => `- ${s}: ${v.count}${v.value ? ` (${kes(v.value)} unpaid)` : ""}`,
+      );
+      // Say nothing about money rather than assert a zero: a business with no
+      // invoices raised yet has an unknown pipeline value, not a worthless one.
+      const head = `Pipeline (${contacts.length} open leads${totalValue ? `, ${kes(totalValue)} unpaid` : ""}):`;
+      return `${head}\n${rows.join("\n")}`;
     }
 
     case "whats_waiting": {

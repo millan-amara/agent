@@ -366,9 +366,9 @@ model Contact {
   phone         String
   name          String?
   stage         String
-  // Open pipeline value in cents (KES). Carried from migrated deals; the home
-  // for "potential revenue" so it isn't buried in the fields JSON.
-  valueCents    Int       @default(0)
+  // NB: there is deliberately no stored "pipeline value" here. Open value is
+  // derived from unpaid invoices (see ownerTools.pipeline_breakdown) so it can
+  // never drift from the money actually billed.
   // JSON object of custom fields the AI captures during qualification
   fields        String    @default("{}")
   source        String?

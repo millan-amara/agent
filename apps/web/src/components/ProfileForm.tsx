@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Store,
   Tags,
@@ -10,9 +10,12 @@ import {
   X,
   Sparkles,
   Loader2,
+  CheckCircle2,
+  Info,
   type LucideIcon,
 } from "lucide-react";
 import { api, type BusinessProfile } from "@/lib/api";
+import { parseFixedAmountKes, formatKes } from "@/lib/price";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Field";
 
@@ -26,11 +29,20 @@ export function ProfileForm({
   saving,
   submitLabel,
   onSubmit,
+  paymentsEnabled = false,
+  bookingAutomated = false,
+  onDirtyChange,
 }: {
   initial: BusinessProfile;
   saving: boolean;
   submitLabel: string;
-  onSubmit: (profile: BusinessProfile) => void;
+  /** Resolves true once the profile is actually persisted (resets the dirty flag). */
+  onSubmit: (profile: BusinessProfile) => Promise<boolean>;
+  /** Paystack connected — the AI can raise invoices, so prices must be exact. */
+  paymentsEnabled?: boolean;
+  /** Calendar booking is on — the AI books itself, so booking notes are context only. */
+  bookingAutomated?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [p, setP] = useState<BusinessProfile>({
     ...initial,
@@ -43,6 +55,22 @@ export function ProfileForm({
   const [neverSayText, setNeverSayText] = useState((initial.neverSay ?? []).join("\n"));
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
+  // What the last successful save looked like. Compared against the live form to
+  // decide whether there's unsaved work worth warning about.
+  const [baseline, setBaseline] = useState(() => snapshot(initial, (initial.neverSay ?? []).join("\n")));
+
+  const dirty = snapshot(p, neverSayText) !== baseline;
+
+  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+
+  // Catch tab-close / reload with unsaved edits. (Switching settings tabs is
+  // guarded separately by the parent, via onDirtyChange.)
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const set = <K extends keyof BusinessProfile>(key: K, value: BusinessProfile[K]) =>
     setP((prev) => ({ ...prev, [key]: value }));
@@ -60,20 +88,30 @@ export function ProfileForm({
     }
   };
 
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    // Drop half-filled rows: a blank service renders as a bare "- " bullet in the
+    // system prompt, and a one-sided FAQ teaches the AI nothing. (The server
+    // re-applies this — this pass just keeps what we send honest.)
+    const cleaned: BusinessProfile = {
+      ...p,
+      services: (p.services ?? []).filter((s) => s.name.trim()),
+      faqs: (p.faqs ?? []).filter((f) => f.q.trim() && f.a.trim()),
+      neverSay: neverSayText
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+    const ok = await onSubmit(cleaned);
+    if (ok) {
+      setP(cleaned);
+      setNeverSayText(cleaned.neverSay!.join("\n"));
+      setBaseline(snapshot(cleaned, cleaned.neverSay!.join("\n")));
+    }
+  };
+
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSubmit({
-          ...p,
-          neverSay: neverSayText
-            .split("\n")
-            .map((s) => s.trim())
-            .filter(Boolean),
-        });
-      }}
-      className="space-y-7"
-    >
+    <form onSubmit={(e) => void submit(e)} className="space-y-7">
       <Section
         icon={Store}
         title="The basics"
@@ -101,6 +139,7 @@ export function ProfileForm({
           <Textarea
             required
             rows={4}
+            maxLength={4000}
             value={p.description}
             onChange={(e) => set("description", e.target.value)}
             placeholder="e.g. We're a physiotherapy clinic in Westlands helping people recover from injury and pain. Or jot a few words and tap Draft with AI."
@@ -112,14 +151,27 @@ export function ProfileForm({
             <Input
               value={p.businessHours ?? ""}
               onChange={(e) => set("businessHours", e.target.value)}
+              maxLength={300}
               placeholder="Mon–Fri 8am–6pm, Sat 9am–1pm"
             />
           </Field>
-          <Field label="How do bookings work?">
+          <Field
+            label={bookingAutomated ? "Anything else about bookings?" : "How do bookings work?"}
+            hint={
+              bookingAutomated
+                ? "Azayon books into your calendar itself. Use this for extra context only — e.g. “arrive 10 minutes early”."
+                : "How a booking request should be handled."
+            }
+          >
             <Input
               value={p.bookingInfo ?? ""}
               onChange={(e) => set("bookingInfo", e.target.value)}
-              placeholder="Collect name + preferred time; front desk confirms"
+              maxLength={500}
+              placeholder={
+                bookingAutomated
+                  ? "Arrive 10 minutes early; bring any previous scans"
+                  : "Collect name + preferred time; front desk confirms"
+              }
             />
           </Field>
         </div>
@@ -128,11 +180,16 @@ export function ProfileForm({
       <Section
         icon={Tags}
         title="Services & prices"
-        description="The AI only ever quotes prices from this list — nothing else."
+        description={
+          paymentsEnabled
+            ? "The AI quotes and charges only from this list — never anything else."
+            : "The AI only ever quotes prices from this list — nothing else."
+        }
       >
         <ListEditor
           rows={(p.services ?? []).map((s) => [s.name, s.price ?? ""])}
           placeholders={["Service", "Price (e.g. KES 3,500)"]}
+          labels={["Service name", "Service price"]}
           addLabel="Add a service"
           onChange={(rows) =>
             set(
@@ -140,6 +197,10 @@ export function ProfileForm({
               rows.map(([name, price]) => ({ name: name ?? "", price: price || undefined })),
             )
           }
+          // Prices are free text, but create_invoice needs one exact number. Show the
+          // owner which of their prices the AI can actually charge, and which it will
+          // hand to a human — before a customer finds out the hard way.
+          rowHint={paymentsEnabled ? servicePriceHint : undefined}
         />
       </Section>
 
@@ -151,6 +212,7 @@ export function ProfileForm({
         <ListEditor
           rows={(p.faqs ?? []).map((f) => [f.q, f.a])}
           placeholders={["Question", "Answer"]}
+          labels={["Question", "Answer"]}
           addLabel="Add a question"
           onChange={(rows) => set("faqs", rows.map(([q, a]) => ({ q: q ?? "", a: a ?? "" })))}
         />
@@ -166,6 +228,7 @@ export function ProfileForm({
             <Input
               value={p.tone ?? ""}
               onChange={(e) => set("tone", e.target.value)}
+              maxLength={300}
               placeholder="Warm, reassuring, professional"
             />
           </Field>
@@ -173,24 +236,73 @@ export function ProfileForm({
             <Input
               value={p.languages ?? ""}
               onChange={(e) => set("languages", e.target.value)}
+              maxLength={300}
               placeholder="Reply in the customer's language — English & Swahili"
             />
           </Field>
         </div>
-        <Field label="Things the AI must never do" hint="One per line.">
+        <Field
+          label="Things the AI must never do"
+          hint="One per line. Rules specific to your business — sticking to your price list and never promising outcomes are already built in."
+        >
           <Textarea
             rows={3}
             value={neverSayText}
             onChange={(e) => setNeverSayText(e.target.value)}
-            placeholder={"Quote prices not in the list\nPromise medical outcomes"}
+            placeholder={"Don't discuss our supplier names\nNever agree to same-day home visits"}
           />
         </Field>
       </Section>
 
-      <Button type="submit" size="lg" disabled={saving}>
-        {saving ? "Saving…" : submitLabel}
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button type="submit" size="lg" disabled={saving}>
+          {saving ? "Saving…" : submitLabel}
+        </Button>
+        {dirty && !saving && <span className="text-xs text-muted">Unsaved changes</span>}
+      </div>
     </form>
+  );
+}
+
+/** Stable string form of the whole profile, for dirty comparison. */
+function snapshot(p: BusinessProfile, neverSayText: string): string {
+  return JSON.stringify({
+    description: p.description ?? "",
+    businessHours: p.businessHours ?? "",
+    bookingInfo: p.bookingInfo ?? "",
+    tone: p.tone ?? "",
+    languages: p.languages ?? "",
+    // Compare only filled rows — adding an empty row isn't a real change.
+    services: (p.services ?? [])
+      .filter((s) => s.name.trim())
+      .map((s) => [s.name, s.price ?? ""]),
+    faqs: (p.faqs ?? []).filter((f) => f.q.trim() && f.a.trim()).map((f) => [f.q, f.a]),
+    neverSay: neverSayText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  });
+}
+
+/** Tells the owner whether the AI can charge this price, or must escalate it. */
+function servicePriceHint([name, price]: string[]) {
+  if (!name?.trim()) return null;
+  const amount = parseFixedAmountKes(price);
+  if (amount !== undefined) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-success">
+        <CheckCircle2 className="size-3.5 shrink-0" />
+        The AI can charge {formatKes(amount)} for this.
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted">
+      <Info className="size-3.5 shrink-0" />
+      {price?.trim()
+        ? "Not one fixed price — the AI will quote it but hand the payment to a person."
+        : "No price set — the AI won't quote or charge for this."}
+    </span>
   );
 }
 
@@ -247,13 +359,18 @@ function Field({
 function ListEditor({
   rows,
   placeholders,
+  labels,
   addLabel,
   onChange,
+  rowHint,
 }: {
   rows: string[][];
   placeholders: [string, string];
+  /** Accessible names — these inputs have no visible <label> of their own. */
+  labels: [string, string];
   addLabel: string;
   onChange: (rows: string[][]) => void;
+  rowHint?: (row: string[]) => React.ReactNode;
 }) {
   const update = (i: number, j: number, value: string) => {
     const next = rows.map((r) => [...r]);
@@ -263,27 +380,34 @@ function ListEditor({
   return (
     <div className="space-y-2">
       {rows.map((row, i) => (
-        <div key={i} className="flex gap-2">
-          <Input
-            value={row[0] ?? ""}
-            onChange={(e) => update(i, 0, e.target.value)}
-            placeholder={placeholders[0]}
-            className="w-2/5"
-          />
-          <Input
-            value={row[1] ?? ""}
-            onChange={(e) => update(i, 1, e.target.value)}
-            placeholder={placeholders[1]}
-            className="flex-1"
-          />
-          <button
-            type="button"
-            onClick={() => onChange(rows.filter((_, k) => k !== i))}
-            className="grid size-9 shrink-0 place-items-center rounded-card text-muted hover:bg-danger-soft hover:text-danger"
-            aria-label="Remove"
-          >
-            <X className="size-4" />
-          </button>
+        <div key={i} className="space-y-1">
+          <div className="flex gap-2">
+            <Input
+              value={row[0] ?? ""}
+              onChange={(e) => update(i, 0, e.target.value)}
+              placeholder={placeholders[0]}
+              aria-label={`${labels[0]} ${i + 1}`}
+              maxLength={500}
+              className="w-2/5"
+            />
+            <Input
+              value={row[1] ?? ""}
+              onChange={(e) => update(i, 1, e.target.value)}
+              placeholder={placeholders[1]}
+              aria-label={`${labels[1]} ${i + 1}`}
+              maxLength={2000}
+              className="flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(rows.filter((_, k) => k !== i))}
+              className="grid size-9 shrink-0 place-items-center rounded-card text-muted hover:bg-danger-soft hover:text-danger"
+              aria-label={`Remove ${labels[0].toLowerCase()} ${i + 1}`}
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          {rowHint && <div className="pl-1">{rowHint(row)}</div>}
         </div>
       ))}
       <button

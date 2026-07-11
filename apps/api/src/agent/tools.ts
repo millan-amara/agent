@@ -18,9 +18,11 @@ export interface ToolContext {
 // gate is the primary control). Owners can raise larger invoices manually.
 const MAX_AI_INVOICE_KES = 1_000_000;
 // Caps on attacker-controlled free text the AI persists to the contact record.
-const MAX_LEAD_FIELDS = 30;
-const MAX_LEAD_KEY_LEN = 60;
-const MAX_LEAD_VALUE_LEN = 500;
+// Also enforced on the owner-facing PATCH /api/contacts/:id, so a hand-typed detail
+// is bounded exactly like an AI-captured one.
+export const MAX_LEAD_FIELDS = 30;
+export const MAX_LEAD_KEY_LEN = 60;
+export const MAX_LEAD_VALUE_LEN = 500;
 
 export interface TenantCapabilities {
   booking: boolean;

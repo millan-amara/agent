@@ -16,7 +16,7 @@ export class WindowClosedError extends Error {
   constructor() {
     super(
       "24h customer service window is closed — free-form messages are not allowed. " +
-        "An approved template message is required (Slice 4).",
+        "An approved template message is required.",
     );
   }
 }

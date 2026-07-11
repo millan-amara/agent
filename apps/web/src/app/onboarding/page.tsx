@@ -43,8 +43,10 @@ export default function OnboardingPage() {
       await api.saveProfile({ profile });
       setTenant({ ...tenant, profile });
       setStep(1);
+      return true;
     } catch (err) {
       setError((err as Error).message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -133,7 +135,7 @@ export default function OnboardingPage() {
               initial={tenant.profile}
               saving={saving}
               submitLabel="Save & try your AI"
-              onSubmit={(p) => void saveProfile(p)}
+              onSubmit={saveProfile}
             />
           </div>
         )}

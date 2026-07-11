@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { MessagesSquare, ServerCrash } from "lucide-react";
+import { MessagesSquare, ServerCrash, X } from "lucide-react";
 import { api, type Conversation, type ContactDetail, type TenantInfo, type TeamMember } from "@/lib/api";
 import { useLive } from "@/lib/useLive";
 import { ChatPane } from "@/components/ChatPane";
@@ -18,6 +18,17 @@ export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [members, setMembers] = useState<TeamMember[]>([]);
+  // Lead panel as a slide-over, for viewports below lg where it isn't docked.
+  const [leadOpen, setLeadOpen] = useState(false);
+
+  /**
+   * True from the moment a conversation is picked until ITS detail has arrived.
+   * Keyed on the id rather than `detail === null` for two reasons: a fresh pick used
+   * to fall through to the "Select a conversation" empty state while loading, and
+   * switching chats used to keep rendering the PREVIOUS chat's messages under the
+   * new one's name until the fetch landed.
+   */
+  const detailLoading = selectedId !== null && detail?.id !== selectedId;
   const [error, setError] = useState<string | null>(null);
 
   const memberLabel = (id?: string | null) => {
@@ -44,6 +55,8 @@ export default function InboxPage() {
   useEffect(() => {
     if (selectedId) refreshDetail(selectedId);
     else setDetail(null);
+    // Don't carry one lead's open panel over to the next conversation.
+    setLeadOpen(false);
   }, [selectedId, refreshDetail]);
 
   useLive(
@@ -167,19 +180,26 @@ export default function InboxPage() {
 
       {/* Chat */}
       <section className={`min-w-0 flex-1 ${selectedId ? "flex" : "hidden md:flex"}`}>
-        {detail ? (
-          <ChatPane detail={detail} onChanged={onChanged} onBack={() => setSelectedId(null)} />
-        ) : (
+        {!selectedId ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-canvas text-center">
             <div className="grid size-14 place-items-center rounded-full bg-line/50 text-muted">
               <MessagesSquare className="size-7" strokeWidth={1.5} />
             </div>
             <p className="text-sm text-muted">Select a conversation to get started</p>
           </div>
+        ) : detailLoading ? (
+          <ChatSkeleton />
+        ) : (
+          <ChatPane
+            detail={detail!}
+            onChanged={onChanged}
+            onBack={() => setSelectedId(null)}
+            onOpenLead={() => setLeadOpen(true)}
+          />
         )}
       </section>
 
-      {/* Lead panel — desktop only */}
+      {/* Lead panel — docked from lg up */}
       <aside className="hidden w-72 shrink-0 border-l border-line bg-surface lg:block">
         {detail && tenant ? (
           <LeadPanel detail={detail} stages={tenant.stages} onChanged={onChanged} />
@@ -189,6 +209,35 @@ export default function InboxPage() {
           </div>
         )}
       </aside>
+
+      {/* Below lg the panel has nowhere to dock, so the same content slides over.
+          Without this, stage and lead details are unreachable on a phone. */}
+      {leadOpen && detail && tenant && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Lead details">
+          <button
+            type="button"
+            aria-label="Close lead details"
+            onClick={() => setLeadOpen(false)}
+            className="absolute inset-0 bg-ink/40"
+          />
+          <div className="absolute inset-y-0 right-0 flex w-[min(20rem,88vw)] flex-col border-l border-line bg-surface shadow-xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-line px-4 py-3">
+              <span className="text-sm font-semibold text-ink">Lead details</span>
+              <button
+                type="button"
+                onClick={() => setLeadOpen(false)}
+                aria-label="Close"
+                className="rounded-card p-1 text-muted hover:bg-canvas hover:text-ink"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <LeadPanel detail={detail} stages={tenant.stages} onChanged={onChanged} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -215,4 +264,43 @@ function timeAgo(iso: string): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86400)}d`;
+}
+
+/**
+ * Placeholder while a conversation's detail loads. Mirrors ChatPane's real geometry
+ * — header, alternating bubbles, composer — so the swap doesn't jolt the layout.
+ */
+function ChatSkeleton() {
+  // Fixed widths (not random) so the shape is stable across re-renders.
+  const bubbles: Array<{ inbound: boolean; w: string }> = [
+    { inbound: true, w: "w-40" },
+    { inbound: false, w: "w-56" },
+    { inbound: true, w: "w-32" },
+    { inbound: false, w: "w-44" },
+    { inbound: true, w: "w-52" },
+  ];
+  return (
+    <div className="flex h-full w-full min-h-0 flex-col bg-canvas">
+      <header className="flex items-center gap-3 border-b border-line bg-surface px-3 py-2.5 md:px-4">
+        <Skeleton className="size-9 shrink-0 rounded-full" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Skeleton className="h-3.5 w-32" />
+          <Skeleton className="h-2.5 w-24" />
+        </div>
+        <Skeleton className="h-8 w-20 rounded-card" />
+      </header>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-hidden px-3 py-4 md:px-6">
+        {bubbles.map((b, i) => (
+          <div key={i} className={`flex ${b.inbound ? "justify-start" : "justify-end"}`}>
+            <Skeleton className={`h-9 ${b.w} max-w-[78%] rounded-2xl`} />
+          </div>
+        ))}
+      </div>
+
+      <footer className="border-t border-line bg-surface p-3 md:px-4">
+        <Skeleton className="h-11 w-full rounded-xl" />
+      </footer>
+    </div>
+  );
 }

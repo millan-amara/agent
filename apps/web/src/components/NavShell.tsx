@@ -25,8 +25,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api, AuthError, type Me } from "@/lib/api";
+import { BRAND_CHANGED } from "@/lib/brand";
 import { useLocale } from "@/lib/i18n";
-import { Logo } from "@/components/Logo";
+import { TenantBrand } from "@/components/TenantBrand";
 import { InstallAppButton } from "@/components/InstallAppButton";
 
 type Tab = {
@@ -90,6 +91,14 @@ export function NavShell({ children }: { children: React.ReactNode }) {
   // Close the mobile "More" sheet whenever the route changes.
   useEffect(() => setMoreOpen(false), [pathname]);
 
+  // Settings edits the logo/name on this same route, so `me` would otherwise stay
+  // stale until the next navigation.
+  useEffect(() => {
+    const refresh = () => void api.me().then(setMe).catch(() => {});
+    window.addEventListener(BRAND_CHANGED, refresh);
+    return () => window.removeEventListener(BRAND_CHANGED, refresh);
+  }, []);
+
   if (isMarketing) return <>{children}</>;
   if (isPublic || isOnboarding) return <div className="h-dvh">{children}</div>;
   if (!checked) {
@@ -136,9 +145,9 @@ export function NavShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-dvh flex-col md:flex-row">
       {/* Desktop rail */}
       <nav className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface md:flex">
+        {/* The customer's brand owns the shell — Azayon is credited at the foot below. */}
         <div className="px-4 py-5">
-          <Logo />
-          {me && <p className="mt-2 truncate text-xs text-muted">{me.tenant.name}</p>}
+          {me && <TenantBrand name={me.tenant.name} logoUrl={me.tenant.logoUrl} />}
         </div>
 
         <div className="flex flex-1 flex-col gap-0.5 px-3">
@@ -158,11 +167,20 @@ export function NavShell({ children }: { children: React.ReactNode }) {
 
         <button
           onClick={() => void logout()}
-          className="mx-3 mb-4 mt-0.5 flex items-center gap-3 rounded-card px-3 py-2 text-left text-sm font-medium text-muted hover:bg-canvas hover:text-ink"
+          className="mx-3 mt-0.5 flex items-center gap-3 rounded-card px-3 py-2 text-left text-sm font-medium text-muted hover:bg-canvas hover:text-ink"
         >
           <LogOut className="size-[18px] shrink-0" strokeWidth={2} />
           {t("nav.logout")}
         </button>
+
+        <a
+          href="https://azayon.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mx-3 mb-4 mt-2 border-t border-line px-3 pt-3 text-[11px] text-muted/70 transition-colors hover:text-muted"
+        >
+          Powered by Azayon
+        </a>
       </nav>
 
       <main className="flex min-h-0 flex-1 flex-col">

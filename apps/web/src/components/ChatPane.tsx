@@ -12,8 +12,16 @@ import {
   Image as ImageIcon,
   Paperclip,
   Lock,
+  PanelRight,
 } from "lucide-react";
-import { api, type ContactDetail, type ApiMessage, type TeamMember } from "@/lib/api";
+import Link from "next/link";
+import {
+  api,
+  type ContactDetail,
+  type ApiMessage,
+  type MessageTemplate,
+  type TeamMember,
+} from "@/lib/api";
 import { StatePill } from "./StatePill";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -96,10 +104,13 @@ export function ChatPane({
   detail,
   onChanged,
   onBack,
+  onOpenLead,
 }: {
   detail: ContactDetail;
   onChanged: () => void;
   onBack?: () => void;
+  /** Opens the lead panel as a sheet. Only passed below lg, where it isn't docked. */
+  onOpenLead?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -185,6 +196,18 @@ export function ChatPane({
             </option>
           ))}
         </select>
+        {/* Below lg the lead panel isn't on screen, so this is the only way to reach
+            the lead's stage and details. Hidden on lg+, where the panel is always up. */}
+        {onOpenLead && (
+          <button
+            onClick={onOpenLead}
+            className="rounded-card p-1.5 text-muted hover:bg-canvas hover:text-ink lg:hidden"
+            aria-label="Lead details"
+            title="Lead details"
+          >
+            <PanelRight className="size-5" />
+          </button>
+        )}
         {!detail.optedOut && (
           <Button variant={detail.aiPaused ? "primary" : "secondary"} size="sm" onClick={toggleAi}>
             {detail.aiPaused ? "Resume AI" : "Take over"}
@@ -201,13 +224,7 @@ export function ChatPane({
 
       <footer className="border-t border-line bg-surface p-3 md:px-4">
         {!detail.windowOpen && !detail.optedOut && (
-          <div className="mb-2 flex items-start gap-2 rounded-card border border-line bg-canvas px-3 py-2 text-xs text-muted">
-            <Lock className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              This customer last wrote more than 24 hours ago — use an approved template to reach
-              them. (Templates arrive in a later update.)
-            </span>
-          </div>
+          <ClosedWindowNotice detail={detail} onChanged={onChanged} />
         )}
         {error && (
           <div className="mb-2 rounded-card bg-danger-soft px-3 py-2 text-xs text-danger">{error}</div>
@@ -245,6 +262,107 @@ export function ChatPane({
           </button>
         </div>
       </footer>
+    </div>
+  );
+}
+
+/**
+ * Shown when the 24h customer-service window has closed. Outside that window Meta
+ * only permits an APPROVED template, so that's exactly what this offers — the copy
+ * used to claim templates were "coming in a later update", which was never true:
+ * follow-ups and broadcasts have always sent them. A human in the inbox just had no
+ * way to.
+ */
+function ClosedWindowNotice({
+  detail,
+  onChanged,
+}: {
+  detail: ContactDetail;
+  onChanged: () => void;
+}) {
+  const [templates, setTemplates] = useState<MessageTemplate[] | null>(null);
+  const [templateId, setTemplateId] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .messageTemplates()
+      .then((all) => {
+        // Only approved templates are legal outside the window; a draft would be
+        // rejected by the Graph API anyway.
+        const approved = all.filter((t) => t.status === "approved");
+        setTemplates(approved);
+        setTemplateId(approved[0]?.id ?? "");
+      })
+      .catch(() => setTemplates([]));
+  }, []);
+
+  const send = async () => {
+    if (!templateId || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await api.sendTemplate(detail.id, templateId);
+      onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const selected = templates?.find((t) => t.id === templateId);
+
+  return (
+    <div className="mb-2 rounded-card border border-line bg-canvas px-3 py-2.5">
+      <div className="flex items-start gap-2 text-xs text-muted">
+        <Lock className="mt-0.5 size-3.5 shrink-0" />
+        <span>
+          This customer last wrote more than 24 hours ago. WhatsApp only allows an approved
+          template until they reply.
+        </span>
+      </div>
+
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+
+      {templates === null ? (
+        <p className="mt-2 text-xs text-muted">Loading templates…</p>
+      ) : templates.length === 0 ? (
+        <p className="mt-2 text-xs text-muted">
+          You have no approved templates yet — create one in{" "}
+          <Link href="/settings" className="font-medium text-primary-700 hover:underline">
+            Settings → WhatsApp
+          </Link>
+          , then submit it to Meta for approval.
+        </p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          <div className="flex items-center gap-2">
+            <select
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              aria-label="Template to send"
+              className="min-w-0 flex-1 rounded-card border border-line bg-surface px-2 py-1.5 text-xs outline-none focus:border-primary"
+            >
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            <Button size="sm" onClick={() => void send()} disabled={sending || !templateId}>
+              {sending ? "Sending…" : "Send template"}
+            </Button>
+          </div>
+          {/* Templates are pre-approved and uneditable, so show exactly what will go out. */}
+          {selected && (
+            <p className="rounded-card bg-surface px-2.5 py-1.5 text-xs text-muted">
+              {selected.body}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

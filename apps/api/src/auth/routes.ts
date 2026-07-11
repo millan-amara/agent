@@ -201,6 +201,8 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         waConnected: Boolean(auth.tenant.waPhoneNumberId),
         stages: JSON.parse(auth.tenant.stages) as string[],
         billing: await billingStatus(auth.tenant),
+        // Brands the app shell for the tenant. A base64 data: URL (see /api/tenant/logo).
+        logoUrl: auth.tenant.logoUrl,
       },
     };
   });

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { Contact, Message, Invoice, InvoiceItem, Tenant } from "@prisma/client";
 import { db } from "../db.js";
@@ -11,6 +12,8 @@ import { windowIsOpen, WindowClosedError, type MessageSender } from "../whatsapp
 import {
   submitTemplate,
   syncTemplateStatuses,
+  sendTemplateMessage,
+  renderTemplate,
   TemplateSubmitError,
   variableCount,
 } from "../whatsapp/templates.js";
@@ -43,8 +46,29 @@ import {
   subscribeAppToWaba,
   EmbeddedSignupError,
 } from "../whatsapp/embedded.js";
-import type { BusinessProfile } from "../agent/prompt.js";
-import { paymentApprovalRequired } from "../agent/tools.js";
+import { businessProfileSchema, normalizeProfile, type BusinessProfile } from "../agent/prompt.js";
+import {
+  paymentApprovalRequired,
+  MAX_LEAD_FIELDS,
+  MAX_LEAD_KEY_LEN,
+  MAX_LEAD_VALUE_LEN,
+} from "../agent/tools.js";
+
+/**
+ * Pipeline edit payload. `renames` maps an old stage name to its new one so leads
+ * can be carried across — the client knows which row was renamed; the server can't
+ * tell a rename from a delete-plus-add by name alone.
+ */
+const stagesPayloadSchema = z.object({
+  stages: z
+    .array(z.string().trim().min(1, "Stage names can't be empty.").max(40))
+    .min(2, "A pipeline needs at least 2 stages.")
+    .max(12, "A pipeline can have at most 12 stages."),
+  renames: z
+    .array(z.object({ from: z.string().trim().min(1), to: z.string().trim().min(1) }))
+    .max(12)
+    .default([]),
+});
 
 const serializeContact = (c: Contact) => ({
   id: c.id,
@@ -163,11 +187,12 @@ export function registerApiRoutes(
     };
   });
 
-  // Invoice branding shown on the public hosted invoice page.
+  // Business branding: the app sidebar, the hosted invoice page, and the public page.
   app.put("/api/tenant/branding", async (req, reply) => {
     const auth = await requireOwner(req, reply);
     if (!auth) return;
     const body = req.body as {
+      name?: string;
       logoUrl?: string | null;
       businessPhone?: string | null;
       businessEmail?: string | null;
@@ -177,9 +202,13 @@ export function registerApiRoutes(
       const s = (v ?? "").trim();
       return s ? s.slice(0, max) : null;
     };
+    // The business name is the headline brand, so it can be corrected here — but it
+    // can never be blanked, since the whole shell (and every invoice) renders it.
+    const name = clean(body.name, 120);
     await db.tenant.update({
       where: { id: auth.tenant.id },
       data: {
+        ...(name ? { name } : {}),
         // Large cap: logoUrl may be a base64 data: URL from the upload endpoint,
         // not just a pasted http(s) URL.
         logoUrl: clean(body.logoUrl, 1_500_000),
@@ -364,15 +393,26 @@ export function registerApiRoutes(
   app.put("/api/tenant/profile", async (req, reply) => {
     const auth = await requireAuth(req, reply);
     if (!auth) return;
-    const { profile, stages, name, completeOnboarding } = req.body as {
-      profile?: BusinessProfile;
+    const { profile, stages, name, completeOnboarding } = (req.body ?? {}) as {
+      profile?: unknown;
       stages?: string[];
       name?: string;
       completeOnboarding?: boolean;
     };
-    if (!profile?.description?.trim()) {
-      return reply.code(400).send({ error: "A business description is required." });
+    // This payload is compiled verbatim into the system prompt, so validate it
+    // rather than trusting the client: a wrong-typed `services` would throw inside
+    // buildSystemPrompt on every inbound message for this tenant.
+    const parsed = businessProfileSchema.safeParse(profile);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return reply.code(400).send({
+        error: issue
+          ? `${issue.path.join(".") || "profile"}: ${issue.message}`
+          : "Invalid business profile.",
+      });
     }
+    // Strips half-filled rows and derives each service's invoiceable amount.
+    const cleanProfile = normalizeProfile(parsed.data);
     const cleanStages =
       Array.isArray(stages) && stages.length >= 2
         ? stages.map((s) => String(s).trim()).filter(Boolean)
@@ -381,12 +421,77 @@ export function registerApiRoutes(
       where: { id: auth.tenant.id },
       data: {
         name: name?.trim() || auth.tenant.name,
-        businessProfile: JSON.stringify(profile),
+        businessProfile: JSON.stringify(cleanProfile),
         stages: JSON.stringify(cleanStages),
         ...(completeOnboarding ? { onboarded: true } : {}),
       },
     });
     return { ok: true };
+  });
+
+  /**
+   * Edit the pipeline: rename, reorder, add and remove stages.
+   *
+   * `Contact.stage` stores the stage NAME, not an id, so a rename would strand every
+   * lead sitting in the old name — it would vanish from the board (which filters by
+   * exact name) and the AI's set_stage would reject it. The client therefore reports
+   * which rows it renamed, and we carry the leads across before saving. Anything left
+   * in a stage that no longer exists (a deletion, or a rename the client didn't
+   * report) falls back to the first stage rather than being orphaned.
+   *
+   * Nothing else keys off stage names: dashboard "qualified" is defined as
+   * "not in the first stage", and broadcast segments are resolved to recipients at
+   * send time. So a rename is safe once contacts are remapped.
+   */
+  app.put("/api/tenant/stages", async (req, reply) => {
+    const auth = await requireOwner(req, reply);
+    if (!auth) return;
+
+    const parsed = stagesPayloadSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: parsed.error.issues[0]?.message ?? "Invalid pipeline stages." });
+    }
+    const { stages, renames } = parsed.data;
+
+    // Names are the identity here, so two stages that differ only by case would be
+    // indistinguishable to the AI and to the board.
+    if (new Set(stages.map((s) => s.toLowerCase())).size !== stages.length) {
+      return reply.code(400).send({ error: "Stage names must be unique." });
+    }
+
+    const previous = JSON.parse(auth.tenant.stages) as string[];
+    const tenantId = auth.tenant.id;
+    const firstStage = stages[0]!;
+
+    await db.$transaction(async (tx) => {
+      for (const { from, to } of renames) {
+        // Only honour a rename that starts from a stage that really existed and
+        // lands on one that survives — otherwise it's a delete, handled below.
+        if (from === to || !previous.includes(from) || !stages.includes(to)) continue;
+        await tx.contact.updateMany({
+          where: { tenantId, stage: from },
+          data: { stage: to },
+        });
+      }
+      await tx.contact.updateMany({
+        where: { tenantId, stage: { notIn: stages } },
+        data: { stage: firstStage },
+      });
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: { stages: JSON.stringify(stages) },
+      });
+    });
+
+    await audit(
+      tenantId,
+      auth.user.id,
+      "stages.update",
+      `${previous.join(" → ")}  ⇒  ${stages.join(" → ")}`,
+    );
+    return { ok: true, stages };
   });
 
   // Draft (or polish) the business description with the AI — powers the
@@ -951,7 +1056,7 @@ export function registerApiRoutes(
       if (err instanceof WindowClosedError) {
         return reply.code(409).send({
           error:
-            "The 24h window is closed — this customer can't receive free-form messages until they write again. (Template messages arrive in Slice 4.)",
+            "The 24h window is closed — this customer can't receive free-form messages until they write again. Send an approved template instead.",
         });
       }
       throw err;
@@ -972,6 +1077,69 @@ export function registerApiRoutes(
         status: waMessageId ? "sent" : null,
       },
     });
+    publish({ type: "message", tenantId: auth.tenant.id, contactId: id });
+    publish({ type: "contact_updated", tenantId: auth.tenant.id, contactId: id });
+    return { message: serializeMessage(message), contact: serializeContact(updated) };
+  });
+
+  /**
+   * Send an approved template to one contact — the only legal way to reach someone
+   * once the 24h customer-service window has closed. The machinery already existed
+   * (follow-ups and broadcasts both call sendTemplateMessage); this exposes it to a
+   * human in the inbox, who previously had no way out of a closed window.
+   */
+  app.post("/api/contacts/:id/template", async (req, reply) => {
+    const auth = await requireAuth(req, reply);
+    if (!auth) return;
+    const { id } = req.params as { id: string };
+    const { templateId } = (req.body ?? {}) as { templateId?: string };
+    if (!templateId) return reply.code(400).send({ error: "templateId is required" });
+
+    const contact = await db.contact.findFirst({ where: { id, tenantId: auth.tenant.id } });
+    if (!contact) return reply.code(404).send({ error: "not found" });
+    if (contact.optedOut) return reply.code(409).send({ error: "Contact has opted out." });
+
+    const billing = await billingStatus(auth.tenant);
+    if (!canSend(billing.state)) {
+      return reply.code(402).send({
+        error: "Your subscription is inactive — subscribe to send messages again.",
+      });
+    }
+
+    // Only an APPROVED template may leave the building: Meta rejects anything else
+    // outside the window, and a draft would fail at the Graph API anyway.
+    const template = await db.template.findFirst({
+      where: { id: templateId, tenantId: auth.tenant.id, status: "approved" },
+    });
+    if (!template) {
+      return reply.code(400).send({ error: "That template isn't approved yet." });
+    }
+
+    let waMessageId: string | null = null;
+    try {
+      waMessageId = await sendTemplateMessage(auth.tenant, contact, template);
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message || "Template send failed." });
+    }
+
+    // Record what the customer actually received, not the raw {{1}} placeholders.
+    const message = await db.message.create({
+      data: {
+        tenantId: auth.tenant.id,
+        contactId: id,
+        direction: "out",
+        author: "human",
+        text: renderTemplate(template, auth.tenant, contact),
+        waMessageId,
+        status: waMessageId ? "sent" : null,
+      },
+    });
+    // A human reaching out by hand means they've taken the wheel.
+    const updated = await db.contact.update({
+      where: { id },
+      data: { aiPaused: true, needsHuman: false, needsReview: false },
+    });
+    await audit(auth.tenant.id, auth.user.id, "template.send", `${contact.phone} ← ${template.name}`);
     publish({ type: "message", tenantId: auth.tenant.id, contactId: id });
     publish({ type: "contact_updated", tenantId: auth.tenant.id, contactId: id });
     return { message: serializeMessage(message), contact: serializeContact(updated) };
@@ -1342,31 +1510,73 @@ export function registerApiRoutes(
     return serializeContact(updated);
   });
 
-  // Stage change (pipeline drag-and-drop).
+  /**
+   * Partial lead update: stage (pipeline drag-and-drop, LeadPanel dropdown) and/or
+   * the details map the LeadPanel edits by hand.
+   *
+   * `fields` is a full replace, not a merge — the owner can delete a detail, and a
+   * merge could never express that. It's bounded by the same caps as the AI's
+   * update_lead so a hand-typed detail can't grow the prompt beyond what we allow
+   * the model to write.
+   */
   app.patch("/api/contacts/:id", async (req, reply) => {
     const auth = await requireAuth(req, reply);
     if (!auth) return;
     const { id } = req.params as { id: string };
-    const { stage } = req.body as { stage?: string };
-    const stages = JSON.parse(auth.tenant.stages) as string[];
-    if (!stage || !stages.includes(stage)) {
-      return reply.code(400).send({ error: `stage must be one of: ${stages.join(", ")}` });
-    }
+    const body = (req.body ?? {}) as { stage?: string; fields?: unknown };
+
     const contact = await db.contact.findFirst({ where: { id, tenantId: auth.tenant.id } });
     if (!contact) return reply.code(404).send({ error: "not found" });
 
-    const updated = await db.contact.update({ where: { id }, data: { stage } });
-    await db.message.create({
-      data: {
-        tenantId: auth.tenant.id,
-        contactId: id,
-        direction: "out",
-        author: "system",
-        kind: "event",
-        text: `Team moved lead to "${stage}"`,
-      },
-    });
-    await audit(auth.tenant.id, auth.user.id, "stage.change", `${contact.phone} → ${stage}`);
+    const data: { stage?: string; fields?: string } = {};
+
+    if (body.stage !== undefined) {
+      const stages = JSON.parse(auth.tenant.stages) as string[];
+      if (!stages.includes(body.stage)) {
+        return reply.code(400).send({ error: `stage must be one of: ${stages.join(", ")}` });
+      }
+      data.stage = body.stage;
+    }
+
+    if (body.fields !== undefined) {
+      if (typeof body.fields !== "object" || body.fields === null || Array.isArray(body.fields)) {
+        return reply.code(400).send({ error: "fields must be an object." });
+      }
+      const clean: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(body.fields as Record<string, unknown>)) {
+        if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") continue;
+        const key = k.trim().slice(0, MAX_LEAD_KEY_LEN);
+        if (!key) continue;
+        if (!(key in clean) && Object.keys(clean).length >= MAX_LEAD_FIELDS) continue;
+        clean[key] = typeof v === "string" ? v.slice(0, MAX_LEAD_VALUE_LEN) : v;
+      }
+      data.fields = JSON.stringify(clean);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return reply.code(400).send({ error: "Nothing to update." });
+    }
+
+    const updated = await db.contact.update({ where: { id }, data });
+
+    // A stage move is a team-visible event, so it lands in the thread. Editing a
+    // detail is bookkeeping — audited, but not worth a line in the conversation.
+    if (data.stage && data.stage !== contact.stage) {
+      await db.message.create({
+        data: {
+          tenantId: auth.tenant.id,
+          contactId: id,
+          direction: "out",
+          author: "system",
+          kind: "event",
+          text: `Team moved lead to "${data.stage}"`,
+        },
+      });
+      await audit(auth.tenant.id, auth.user.id, "stage.change", `${contact.phone} → ${data.stage}`);
+    }
+    if (data.fields !== undefined) {
+      await audit(auth.tenant.id, auth.user.id, "lead.details", contact.phone);
+    }
     publish({ type: "contact_updated", tenantId: auth.tenant.id, contactId: id });
     return serializeContact(updated);
   });

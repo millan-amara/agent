@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 /** Chromium's `beforeinstallprompt` — not in lib.dom, so declare the bits we use. */
 interface BeforeInstallPromptEvent extends Event {
@@ -8,89 +8,98 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
-/** True when the app is already running as an installed PWA. */
-function isStandalone(): boolean {
-  if (typeof window === "undefined") return false;
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    // iOS Safari's non-standard flag for home-screen launches.
-    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
-  );
-}
-
 /**
- * iOS/iPadOS never fires `beforeinstallprompt` — installing there is a manual
- * Share > "Add to Home Screen". Detect it so we can show instructions instead of
- * a button that can't do anything. iPadOS 13+ reports a Mac UA, hence maxTouchPoints.
+ * Chrome fires `beforeinstallprompt` ONCE, early, and never replays it. So the
+ * listener cannot live inside a component: the install button sits in the nav rail,
+ * which doesn't mount until `api.me()` resolves — by then the event has come and
+ * gone, and the button stays hidden until something incidental re-triggers it.
+ *
+ * Instead we capture it here at module scope, the moment this bundle evaluates, and
+ * hold it in a tiny store. Components subscribe whenever they happen to mount and
+ * read whatever was already caught.
  */
-function isIos(): boolean {
-  if (typeof window === "undefined") return false;
-  const ua = window.navigator.userAgent;
-  return (
-    /iphone|ipad|ipod/i.test(ua) ||
-    (/macintosh/i.test(ua) && window.navigator.maxTouchPoints > 1)
-  );
+type Snapshot = { canInstall: boolean; needsManualInstructions: boolean };
+
+const EMPTY: Snapshot = { canInstall: false, needsManualInstructions: false };
+
+let deferred: BeforeInstallPromptEvent | null = null;
+let installed = false;
+let isIos = false;
+let snapshot: Snapshot = EMPTY;
+const listeners = new Set<() => void>();
+
+/** Recompute the cached snapshot; useSyncExternalStore needs a stable identity. */
+function refresh() {
+  const next: Snapshot = {
+    canInstall: !installed && (deferred !== null || isIos),
+    // iOS has no programmatic prompt — installing is a manual Share > Add to Home
+    // Screen, so we show instructions rather than a button that can't do anything.
+    needsManualInstructions: !installed && deferred === null && isIos,
+  };
+  if (next.canInstall === snapshot.canInstall && next.needsManualInstructions === snapshot.needsManualInstructions) {
+    return;
+  }
+  snapshot = next;
+  listeners.forEach((l) => l());
 }
 
-export type InstallState = {
-  /** Show an install affordance at all? False once installed, or on unsupported browsers. */
-  canInstall: boolean;
-  /** iOS can't be prompted programmatically — show manual instructions instead. */
-  needsManualInstructions: boolean;
+// "use client" modules still execute during SSR, so guard on window.
+if (typeof window !== "undefined") {
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+  const ua = window.navigator.userAgent;
+  // iPadOS 13+ reports a Mac UA, hence the touch-points check.
+  isIos = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && window.navigator.maxTouchPoints > 1);
+
+  if (standalone) {
+    installed = true;
+  } else {
+    window.addEventListener("beforeinstallprompt", (e) => {
+      // Suppresses Chrome's own mini-infobar so our button is the only prompt.
+      e.preventDefault();
+      deferred = e as BeforeInstallPromptEvent;
+      refresh();
+    });
+    window.addEventListener("appinstalled", () => {
+      installed = true;
+      deferred = null;
+      refresh();
+    });
+  }
+  refresh();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export type InstallState = Snapshot & {
   /** Fires the native install prompt. Resolves true if the user accepted. */
   promptInstall: () => Promise<boolean>;
 };
 
-/**
- * Drives the in-app "Install app" affordance.
- *
- * Chromium fires `beforeinstallprompt` when the PWA is installable; we intercept it
- * (preventDefault suppresses the browser's own mini-infobar) and stash the event so
- * the user can trigger installation from inside our UI instead. The event is
- * single-use, so it's cleared after prompting.
- */
 export function useInstallPrompt(): InstallState {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installed, setInstalled] = useState(false);
-  const [ios, setIos] = useState(false);
-
-  useEffect(() => {
-    if (isStandalone()) {
-      setInstalled(true);
-      return;
-    }
-    setIos(isIos());
-
-    const onBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-    };
-    // Hide the affordance the moment the install completes.
-    const onInstalled = () => {
-      setInstalled(true);
-      setDeferred(null);
-    };
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstall);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
+  const state = useSyncExternalStore(
+    subscribe,
+    () => snapshot,
+    // Nothing is installable on the server; React re-reads the real snapshot
+    // immediately after hydration.
+    () => EMPTY,
+  );
 
   const promptInstall = useCallback(async () => {
     if (!deferred) return false;
-    await deferred.prompt();
-    const { outcome } = await deferred.userChoice;
-    // The event can only be prompted once, regardless of the answer.
-    setDeferred(null);
+    const event = deferred;
+    // The event is single-use whatever the answer, so retire it up front.
+    deferred = null;
+    refresh();
+    await event.prompt();
+    const { outcome } = await event.userChoice;
     return outcome === "accepted";
-  }, [deferred]);
+  }, []);
 
-  return {
-    canInstall: !installed && (deferred !== null || ios),
-    needsManualInstructions: !installed && deferred === null && ios,
-    promptInstall,
-  };
+  return { ...state, promptInstall };
 }

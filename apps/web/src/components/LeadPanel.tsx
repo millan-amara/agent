@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Lock, Unlock } from "lucide-react";
+import { Copy, Lock, Pencil, Plus, Unlock, X } from "lucide-react";
 import { api, type ContactDetail } from "@/lib/api";
 import { StatePill } from "@/components/StatePill";
 import { CardLabel } from "@/components/ui/Card";
@@ -19,8 +19,6 @@ export function LeadPanel({
   stages: string[];
   onChanged: () => void;
 }) {
-  const fields = Object.entries(detail.fields);
-
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto bg-surface p-4">
       {/* Customer identity card */}
@@ -56,18 +54,7 @@ export function LeadPanel({
         </Select>
       </section>
 
-      <section>
-        <CardLabel className="mb-2">Captured by AI</CardLabel>
-        {fields.length === 0 ? (
-          <p className="text-sm text-muted">Nothing yet — fills in as the conversation goes.</p>
-        ) : (
-          <dl className="space-y-1.5 text-sm">
-            {fields.map(([k, v]) => (
-              <Row key={k} label={k} value={String(v)} />
-            ))}
-          </dl>
-        )}
-      </section>
+      <DetailsSection detail={detail} onChanged={onChanged} />
 
       {(detail.appointments?.length ?? 0) > 0 && (
         <section>
@@ -242,5 +229,167 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
       <dt className="capitalize text-muted">{label.replace(/_/g, " ")}</dt>
       <dd className={`text-right font-medium ${mono ? "tnum" : ""}`}>{value}</dd>
     </div>
+  );
+}
+
+// Mirrors the server caps (MAX_LEAD_* in agent/tools.ts), which apply equally to
+// details the AI captures and details typed here.
+const MAX_DETAILS = 30;
+const MAX_KEY_LEN = 60;
+const MAX_VALUE_LEN = 500;
+
+type DetailRow = { key: number; k: string; v: string };
+
+/**
+ * The lead's details — captured by the AI during qualification, and editable by hand.
+ * Read-only until you hit Edit, so a stray tap on a phone can't quietly rewrite a
+ * lead. Saving sends the whole map (the API replaces rather than merges, which is
+ * what lets a detail actually be deleted).
+ */
+function DetailsSection({ detail, onChanged }: { detail: ContactDetail; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [rows, setRows] = useState<DetailRow[]>([]);
+  const [nextKey, setNextKey] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const entries = Object.entries(detail.fields);
+
+  const startEditing = () => {
+    // Values may be numbers/booleans from the AI; they edit (and re-save) as text,
+    // which is how the prompt renders them anyway.
+    setRows(entries.map(([k, v], i) => ({ key: i, k, v: String(v) })));
+    setNextKey(entries.length);
+    setError(null);
+    setEditing(true);
+  };
+
+  const duplicate = (() => {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const k = r.k.trim().toLowerCase();
+      if (!k) continue;
+      if (seen.has(k)) return r.k.trim();
+      seen.add(k);
+    }
+    return null;
+  })();
+
+  const save = async () => {
+    if (duplicate) return;
+    setSaving(true);
+    setError(null);
+    const fields: Record<string, string> = {};
+    for (const r of rows) {
+      const k = r.k.trim();
+      if (k) fields[k] = r.v.trim();
+    }
+    try {
+      await api.setLeadFields(detail.id, fields);
+      setEditing(false);
+      onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <section>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <CardLabel>Details</CardLabel>
+          <button
+            type="button"
+            onClick={startEditing}
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline"
+          >
+            <Pencil className="size-3" />
+            Edit
+          </button>
+        </div>
+        {entries.length === 0 ? (
+          <p className="text-sm text-muted">
+            Nothing yet — the AI fills this in as the conversation goes, or add it yourself.
+          </p>
+        ) : (
+          <dl className="space-y-1.5 text-sm">
+            {entries.map(([k, v]) => (
+              <Row key={k} label={k} value={String(v)} />
+            ))}
+          </dl>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <CardLabel className="mb-2">Details</CardLabel>
+
+      {error && <p className="mb-2 rounded-card bg-danger-soft px-2.5 py-1.5 text-xs text-danger">{error}</p>}
+
+      <div className="space-y-2">
+        {rows.map((row, i) => (
+          <div key={row.key} className="flex items-center gap-1.5">
+            <Input
+              value={row.k}
+              maxLength={MAX_KEY_LEN}
+              placeholder="Detail"
+              aria-label={`Detail ${i + 1} name`}
+              onChange={(e) =>
+                setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, k: e.target.value } : r)))
+              }
+              className="w-2/5 px-2 py-1 text-xs"
+            />
+            <Input
+              value={row.v}
+              maxLength={MAX_VALUE_LEN}
+              placeholder="Value"
+              aria-label={`Detail ${i + 1} value`}
+              onChange={(e) =>
+                setRows((rs) => rs.map((r) => (r.key === row.key ? { ...r, v: e.target.value } : r)))
+              }
+              className="min-w-0 flex-1 px-2 py-1 text-xs"
+            />
+            <button
+              type="button"
+              aria-label={`Remove ${row.k || `detail ${i + 1}`}`}
+              onClick={() => setRows((rs) => rs.filter((r) => r.key !== row.key))}
+              className="grid size-7 shrink-0 place-items-center rounded-card text-muted hover:bg-danger-soft hover:text-danger"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        disabled={rows.length >= MAX_DETAILS}
+        onClick={() => {
+          setRows((rs) => [...rs, { key: nextKey, k: "", v: "" }]);
+          setNextKey((k) => k + 1);
+        }}
+        className="mt-2 inline-flex items-center gap-1.5 rounded-card border border-dashed border-line px-2.5 py-1 text-xs font-medium text-muted hover:border-primary hover:text-primary-700 disabled:opacity-50"
+      >
+        <Plus className="size-3" />
+        Add detail
+      </button>
+
+      {duplicate && (
+        <p className="mt-2 text-xs text-danger">“{duplicate}” is used twice — names must be unique.</p>
+      )}
+
+      <div className="mt-3 flex items-center gap-2">
+        <Button size="sm" onClick={() => void save()} disabled={saving || duplicate !== null}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={saving}>
+          Cancel
+        </Button>
+      </div>
+    </section>
   );
 }

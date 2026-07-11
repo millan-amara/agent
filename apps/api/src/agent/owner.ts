@@ -46,7 +46,6 @@ function ownerAsContact(tenant: Tenant, phone: string): Contact {
     phone,
     name: null,
     stage: "",
-    valueCents: 0,
     fields: "{}",
     source: null,
     assignedUserId: null,
