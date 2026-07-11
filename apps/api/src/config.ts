@@ -18,6 +18,16 @@ const schema = z.object({
   SENTRY_DSN: z.string().optional(),
   // CORS allow-list for the web app in production (defaults to permissive in dev).
   WEB_ORIGIN: z.string().optional(),
+  /**
+   * Parent domain for the session cookie, e.g. ".azayon.com". Set this ONLY when the
+   * API is served from a subdomain of the web origin (api.azayon.com) — then web and
+   * API are the same site and the cookie is first-party (SameSite=Lax; Domain=...).
+   *
+   * Leave unset and the cookie must be SameSite=None, i.e. a third-party cookie:
+   * blocked by Safari, being phased out by Chrome, and the usual cause of "the app
+   * randomly logs me out". See COOKIE_OPTS in auth/auth.ts.
+   */
+  COOKIE_DOMAIN: z.string().optional(),
   // Public base URL of the web app — used to build email links (reset/verify).
   APP_BASE_URL: z.string().default("http://localhost:3000"),
   // External AI / email providers (features degrade gracefully when unset).

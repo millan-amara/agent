@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { buttonStyles } from "@/components/ui/Button";
+import { AuthCta } from "@/components/AuthCta";
 import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { JsonLd } from "@/components/JsonLd";
@@ -622,19 +623,35 @@ function FinalCTA() {
           ready.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link
-            href="/signup"
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-card bg-white px-6 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:bg-primary-50"
-          >
-            Start free trial
-            <ArrowRight className="size-[18px]" />
-          </Link>
-          <Link
-            href="/login"
-            className="inline-flex h-11 items-center justify-center rounded-card border border-white/25 px-6 text-sm font-semibold text-white transition-colors hover:bg-white/10"
-          >
-            Log in
-          </Link>
+          {/* Don't offer "Log in" to someone who already is. */}
+          <AuthCta
+            signedOut={
+              <>
+                <Link
+                  href="/signup"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-card bg-white px-6 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:bg-primary-50"
+                >
+                  Start free trial
+                  <ArrowRight className="size-[18px]" />
+                </Link>
+                <Link
+                  href="/login"
+                  className="inline-flex h-11 items-center justify-center rounded-card border border-white/25 px-6 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                >
+                  Log in
+                </Link>
+              </>
+            }
+            signedIn={
+              <Link
+                href="/dashboard"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-card bg-white px-6 text-sm font-semibold text-primary-800 shadow-card transition-colors hover:bg-primary-50"
+              >
+                Open Azayon
+                <ArrowRight className="size-[18px]" />
+              </Link>
+            }
+          />
         </div>
         <p className="mt-5 flex items-center justify-center gap-1.5 text-sm text-primary-100/75">
           <Clock className="size-4" /> Live in about 10 minutes

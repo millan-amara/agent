@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Clock, Zap, ShieldCheck } from "lucide-react";
 import { api, type VerticalTemplate } from "@/lib/api";
+import { useRedirectIfAuthed } from "@/lib/useRedirectIfAuthed";
 import { LogoFull } from "@/components/Logo";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, PasswordInput } from "@/components/ui/Field";
@@ -18,6 +19,8 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Someone already signed in doesn't need a signup form.
+  const checking = useRedirectIfAuthed("/inbox");
 
   useEffect(() => {
     api.templates().then(setTemplates).catch(() => {});
@@ -35,6 +38,10 @@ export default function SignupPage() {
       setBusy(false);
     }
   };
+
+  if (checking) {
+    return <div className="flex min-h-dvh items-center justify-center text-sm text-muted">Loading…</div>;
+  }
 
   return (
     <div className="flex min-h-dvh">

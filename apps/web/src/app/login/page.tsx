@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { MessageSquareText, CalendarCheck, Receipt } from "lucide-react";
 import { api } from "@/lib/api";
+import { useRedirectIfAuthed } from "@/lib/useRedirectIfAuthed";
 import { LogoFull } from "@/components/Logo";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, PasswordInput } from "@/components/ui/Field";
@@ -15,6 +16,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Don't make someone who's already signed in log in again.
+  const checking = useRedirectIfAuthed("/inbox");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +31,10 @@ export default function LoginPage() {
       setBusy(false);
     }
   };
+
+  if (checking) {
+    return <div className="flex min-h-dvh items-center justify-center text-sm text-muted">Loading…</div>;
+  }
 
   return (
     <div className="flex min-h-dvh">

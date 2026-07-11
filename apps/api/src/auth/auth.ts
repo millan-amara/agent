@@ -5,22 +5,39 @@ import type { CookieSerializeOptions } from "@fastify/cookie";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { Tenant, User } from "@prisma/client";
 import { db } from "../db.js";
-import { isProd } from "../config.js";
+import { config, isProd } from "../config.js";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: string, len: number) => Promise<Buffer>;
 
 const SESSION_COOKIE = "azayon_session";
 const SESSION_TTL_MS = 30 * 24 * 3600_000;
 
-// In production the web app and API are served from different origins (separate
-// Railway services), so the session cookie is cross-site: browsers only send a
-// cross-site cookie when it is `SameSite=None; Secure`. In dev (same-ish origin,
-// plain http) use Lax + insecure so the cookie still works without TLS.
+/**
+ * Session cookie options.
+ *
+ * Two production shapes, chosen by whether COOKIE_DOMAIN is set:
+ *
+ * 1. COOKIE_DOMAIN set (e.g. ".azayon.com") — the API is served from a subdomain of
+ *    the web origin (api.azayon.com). Web and API are then the SAME SITE, so the
+ *    cookie is FIRST-PARTY: `SameSite=Lax; Domain=.azayon.com`. This is the durable
+ *    setup. Prefer it.
+ *
+ * 2. COOKIE_DOMAIN unset — API lives on an unrelated origin (a raw Railway domain),
+ *    so the cookie is cross-site and needs `SameSite=None; Secure` to be sent at all.
+ *    That makes it a THIRD-PARTY cookie: Safari/iOS blocks these outright and Chrome
+ *    is phasing them out, so sessions will appear to vanish at random. Works today on
+ *    Chrome/Android; treat it as a stopgap.
+ *
+ * Dev is same-ish origin over plain http, so Lax + insecure.
+ */
+const COOKIE_DOMAIN = config.COOKIE_DOMAIN;
+
 const COOKIE_OPTS: CookieSerializeOptions = {
   path: "/",
   httpOnly: true,
-  sameSite: isProd ? "none" : "lax",
+  sameSite: isProd ? (COOKIE_DOMAIN ? "lax" : "none") : "lax",
   secure: isProd,
+  ...(isProd && COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
 };
 
 export async function hashPassword(password: string): Promise<string> {
