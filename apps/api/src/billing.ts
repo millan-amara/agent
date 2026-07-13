@@ -171,6 +171,11 @@ export async function createSubscriptionCheckout(
     body: JSON.stringify({
       email,
       plan: plan.planCode,
+      // Paystack REQUIRES `amount` on /transaction/initialize even for a subscription,
+      // where `plan` then overrides it — omit it and the call fails with "Invalid amount
+      // sent" before the plan is ever looked at. It's in the currency subunit (KES cents),
+      // and what actually gets charged is still whatever the plan code says.
+      amount: plan.priceKes * 100,
       currency: "KES",
       callback_url: `${config.APP_BASE_URL}/billing?status=success`,
       metadata: { azayon_tenant_id: tenant.id, tier },
